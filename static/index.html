@@ -1,0 +1,1945 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>USD/INR Tomorrow</title>
+
+
+<!-- =========================================================
+     CHART.JS
+========================================================= -->
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+
+<!-- =========================================================
+     HAMMER.JS
+     Required for zoom/pan interactions
+========================================================= -->
+
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+
+
+<!-- =========================================================
+     CHART.JS ZOOM PLUGIN
+========================================================= -->
+
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"></script>
+
+
+<style>
+
+/* =========================================================
+   VARIABLES
+========================================================= */
+
+:root{
+
+    --ink:#1a2332;
+    --paper:#f6f4ee;
+    --line:#d8d2c2;
+    --brass:#a9822f;
+
+    --up:#2f6d4f;
+    --down:#a1372f;
+
+    --muted:#6b6a5f;
+
+    --panel:#ffffff;
+
+}
+
+
+/* =========================================================
+   GLOBAL
+========================================================= */
+
+*{
+    box-sizing:border-box;
+}
+
+html,
+body{
+
+    margin:0;
+    padding:0;
+
+}
+
+body{
+
+    background:var(--paper);
+
+    color:var(--ink);
+
+    font-family:
+        'Iowan Old Style',
+        'Georgia',
+        serif;
+
+    -webkit-font-smoothing:antialiased;
+
+}
+
+
+/* =========================================================
+   TICKER
+========================================================= */
+
+.ticker-tape{
+
+    background:var(--ink);
+
+    color:var(--paper);
+
+    font-family:'Courier New',monospace;
+
+    font-size:12px;
+
+    letter-spacing:0.08em;
+
+    padding:7px 0;
+
+    overflow:hidden;
+
+    white-space:nowrap;
+
+}
+
+.ticker-tape span{
+
+    padding-right:48px;
+
+}
+
+
+/* =========================================================
+   HEADER
+========================================================= */
+
+header{
+
+    max-width:1100px;
+
+    margin:0 auto;
+
+    padding:48px 24px 20px;
+
+    border-bottom:1px solid var(--line);
+
+}
+
+.eyebrow{
+
+    font-family:'Courier New',monospace;
+
+    font-size:12px;
+
+    letter-spacing:0.15em;
+
+    text-transform:uppercase;
+
+    color:var(--brass);
+
+    margin:0 0 8px;
+
+}
+
+h1{
+
+    font-size:2.6rem;
+
+    margin:0 0 8px;
+
+    font-weight:600;
+
+    line-height:1.1;
+
+}
+
+.sub{
+
+    color:var(--muted);
+
+    font-size:1rem;
+
+    margin:0 0 24px;
+
+    max-width:70ch;
+
+    line-height:1.6;
+
+}
+
+
+/* =========================================================
+   MAIN
+========================================================= */
+
+main{
+
+    max-width:1100px;
+
+    margin:0 auto;
+
+    padding:32px 24px 80px;
+
+}
+
+
+/* =========================================================
+   RATE
+========================================================= */
+
+.rate-block{
+
+    display:flex;
+
+    align-items:baseline;
+
+    gap:20px;
+
+    flex-wrap:wrap;
+
+    padding:32px 0;
+
+    border-bottom:1px solid var(--line);
+
+}
+
+.rate-figure{
+
+    font-size:4.2rem;
+
+    font-weight:700;
+
+    letter-spacing:-0.02em;
+
+    font-variant-numeric:tabular-nums;
+
+}
+
+.rate-unit{
+
+    font-size:1.2rem;
+
+    color:var(--muted);
+
+}
+
+.direction-pill{
+
+    font-family:'Courier New',monospace;
+
+    font-size:0.85rem;
+
+    letter-spacing:0.08em;
+
+    padding:6px 14px;
+
+    border-radius:999px;
+
+    border:1px solid currentColor;
+
+}
+
+.direction-pill.up{
+    color:var(--up);
+}
+
+.direction-pill.down{
+    color:var(--down);
+}
+
+.direction-pill.flat{
+    color:var(--muted);
+}
+
+.as-of{
+
+    width:100%;
+
+    color:var(--muted);
+
+    font-size:0.9rem;
+
+    font-family:'Courier New',monospace;
+
+}
+
+
+/* =========================================================
+   MODEL PANELS
+========================================================= */
+
+.panel-grid{
+
+    display:grid;
+
+    grid-template-columns:
+        repeat(4,1fr);
+
+    gap:1px;
+
+    background:var(--line);
+
+    margin-top:32px;
+
+}
+
+.panel{
+
+    background:var(--panel);
+
+    padding:24px 20px;
+
+}
+
+.panel .label{
+
+    font-family:'Courier New',monospace;
+
+    font-size:0.75rem;
+
+    letter-spacing:0.1em;
+
+    text-transform:uppercase;
+
+    color:var(--muted);
+
+    margin:0 0 6px;
+
+}
+
+.panel .value{
+
+    font-size:1.7rem;
+
+    font-weight:700;
+
+    margin:0 0 4px;
+
+}
+
+.panel .note{
+
+    font-size:0.8rem;
+
+    color:var(--muted);
+
+    margin:0;
+
+}
+
+.panel.hero-model{
+
+    background:var(--ink);
+
+    color:var(--paper);
+
+}
+
+.panel.hero-model .label,
+.panel.hero-model .note{
+
+    color:#b9c2cf;
+
+}
+
+
+/* =========================================================
+   EXPLANATION
+========================================================= */
+
+.explain{
+
+    margin-top:56px;
+
+    padding-top:32px;
+
+    border-top:1px solid var(--line);
+
+}
+
+.explain h2{
+
+    font-size:1.1rem;
+
+    margin:0 0 16px;
+
+}
+
+.explain p{
+
+    color:#3d4757;
+
+    line-height:1.65;
+
+    font-size:0.98rem;
+
+    max-width:75ch;
+
+}
+
+.explain p + p{
+
+    margin-top:12px;
+
+}
+
+
+/* =========================================================
+   CHART SECTION
+========================================================= */
+
+#chart-wrap{
+
+    margin-top:56px;
+
+    padding-top:32px;
+
+    border-top:1px solid var(--line);
+
+}
+
+.chart-header{
+
+    display:flex;
+
+    justify-content:space-between;
+
+    align-items:center;
+
+    gap:20px;
+
+    flex-wrap:wrap;
+
+    margin-bottom:15px;
+
+}
+
+.chart-header h2{
+
+    font-size:1.1rem;
+
+    margin:0;
+
+}
+
+
+/* =========================================================
+   CHART BUTTONS
+========================================================= */
+
+.chart-controls{
+
+    display:flex;
+
+    gap:8px;
+
+    flex-wrap:wrap;
+
+}
+
+.chart-btn{
+
+    border:1px solid var(--line);
+
+    background:#ffffff;
+
+    color:var(--ink);
+
+    padding:8px 14px;
+
+    font-family:'Courier New',monospace;
+
+    font-size:11px;
+
+    cursor:pointer;
+
+    transition:all 0.15s ease;
+
+}
+
+.chart-btn:hover{
+
+    background:var(--ink);
+
+    color:white;
+
+}
+
+.chart-btn:active{
+
+    transform:scale(0.97);
+
+}
+
+
+/* =========================================================
+   CHART CONTAINER
+========================================================= */
+
+.chart-container{
+
+    position:relative;
+
+    width:100%;
+
+    height:460px;
+
+    background:#ffffff;
+
+    border:1px solid var(--line);
+
+    padding:15px;
+
+}
+
+#fxChart{
+
+    width:100% !important;
+
+    height:100% !important;
+
+}
+
+
+/* =========================================================
+   CHART HELP
+========================================================= */
+
+.chart-help{
+
+    margin-top:10px;
+
+    color:var(--muted);
+
+    font-family:'Courier New',monospace;
+
+    font-size:11px;
+
+    line-height:1.7;
+
+}
+
+
+/* =========================================================
+   CHART STATUS
+========================================================= */
+
+.chart-status{
+
+    margin-top:8px;
+
+    font-family:'Courier New',monospace;
+
+    font-size:11px;
+
+    color:var(--muted);
+
+}
+
+
+/* =========================================================
+   FOOTER
+========================================================= */
+
+footer{
+
+    max-width:1100px;
+
+    margin:0 auto;
+
+    padding:24px;
+
+    color:var(--muted);
+
+    font-size:0.8rem;
+
+    font-family:'Courier New',monospace;
+
+}
+
+
+/* =========================================================
+   LOADING / ERROR
+========================================================= */
+
+.loading,
+.error{
+
+    padding:60px 0;
+
+    text-align:center;
+
+    color:var(--muted);
+
+    font-family:'Courier New',monospace;
+
+}
+
+.error{
+
+    color:var(--down);
+
+}
+
+
+/* =========================================================
+   MOBILE
+========================================================= */
+
+@media(max-width:850px){
+
+    .panel-grid{
+
+        grid-template-columns:
+            repeat(2,1fr);
+
+    }
+
+}
+
+@media(max-width:640px){
+
+    .panel-grid{
+
+        grid-template-columns:1fr;
+
+    }
+
+    .rate-figure{
+
+        font-size:3rem;
+
+    }
+
+    h1{
+
+        font-size:2rem;
+
+    }
+
+    .chart-container{
+
+        height:350px;
+
+        padding:8px;
+
+    }
+
+    .chart-help{
+
+        font-size:10px;
+
+    }
+
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+
+<!-- =========================================================
+     TICKER
+========================================================= -->
+
+<div class="ticker-tape">
+
+    <span>USD/INR FORECAST DASHBOARD</span>
+
+    <span>MODEL: LIGHTGBM</span>
+
+    <span>BENCHMARKS: RANDOM WALK · PPP · IRP</span>
+
+    <span>DAILY TRADING-DAY FORECAST</span>
+
+</div>
+
+
+<!-- =========================================================
+     HEADER
+========================================================= -->
+
+<header>
+
+    <p class="eyebrow">
+        Bhutan FX Watch
+    </p>
+
+    <h1>
+        Where does the rupee land tomorrow?
+    </h1>
+
+    <p class="sub">
+
+        A daily USD/INR forecast built for anyone —
+        no spreadsheets, no code. Since the ngultrum is
+        pegged 1:1 to the rupee, this is what your next
+        dollar purchase actually costs.
+
+    </p>
+
+</header>
+
+
+<!-- =========================================================
+     MAIN
+========================================================= -->
+
+<main>
+
+    <div id="content" class="loading">
+
+        Fetching today's numbers…
+
+    </div>
+
+</main>
+
+
+<!-- =========================================================
+     FOOTER
+========================================================= -->
+
+<footer>
+
+    Forecast regenerated once daily ·
+    Data: Yahoo Finance, World Bank ·
+    Educational project, not financial advice
+
+</footer>
+
+
+<script>
+
+
+/* =========================================================
+   REGISTER ZOOM PLUGIN
+========================================================= */
+
+if(typeof zoomPlugin !== "undefined"){
+
+    Chart.register(zoomPlugin);
+
+}
+
+
+/* =========================================================
+   GLOBAL
+========================================================= */
+
+let fxChart = null;
+
+const content =
+    document.getElementById("content");
+
+
+/* =========================================================
+   DIRECTION PILL
+========================================================= */
+
+function pill(direction){
+
+    let cls = "flat";
+
+    let arrow = "►";
+
+    if(direction === "UP"){
+
+        cls = "up";
+
+        arrow = "▲";
+
+    }
+
+    else if(direction === "DOWN"){
+
+        cls = "down";
+
+        arrow = "▼";
+
+    }
+
+    return `
+
+        <span class="direction-pill ${cls}">
+
+            ${arrow} ${direction}
+
+        </span>
+
+    `;
+
+}
+
+
+/* =========================================================
+   LOAD DASHBOARD
+========================================================= */
+
+async function loadDashboard(){
+
+    try{
+
+        const results =
+            await Promise.all([
+
+                fetch("/api/predict"),
+
+                fetch("/api/history")
+
+            ]);
+
+
+        const predictRes =
+            results[0];
+
+        const historyRes =
+            results[1];
+
+
+        if(!predictRes.ok){
+
+            throw new Error(
+                "Forecast API failed"
+            );
+
+        }
+
+
+        const data =
+            await predictRes.json();
+
+
+        let history = [];
+
+
+        if(historyRes.ok){
+
+            history =
+                await historyRes.json();
+
+        }
+
+
+        render(
+            data,
+            history
+        );
+
+
+    }
+
+    catch(error){
+
+        console.error(
+            "Dashboard error:",
+            error
+        );
+
+
+        content.className =
+            "error";
+
+
+        content.innerHTML = `
+
+            <strong>
+                Could not load today's forecast.
+            </strong>
+
+            <br><br>
+
+            Please check that Flask is running
+            and that /api/predict is working.
+
+            <br><br>
+
+            <small>
+                ${error.message}
+            </small>
+
+        `;
+
+    }
+
+}
+
+
+/* =========================================================
+   RENDER
+========================================================= */
+
+function render(
+    data,
+    history
+){
+
+    content.className = "";
+
+
+    content.innerHTML = `
+
+        <!-- =================================================
+             RATE
+        ================================================= -->
+
+        <div class="rate-block">
+
+            <div>
+
+                <div class="rate-figure">
+
+                    ₹${Number(
+                        data.lightgbm
+                    ).toFixed(2)}
+
+                </div>
+
+            </div>
+
+
+            <span class="rate-unit">
+
+                per US dollar,
+                forecast for
+                ${data.forecast_date}
+
+            </span>
+
+
+            ${pill(
+                data.lightgbm_direction
+            )}
+
+
+            <div class="as-of">
+
+                Based on latest close
+                ₹${Number(
+                    data.latest_usdinr
+                ).toFixed(4)}
+
+                on
+                ${data.latest_available_date}
+
+                · expected move
+
+                ${
+                    Number(
+                        data.lightgbm_change_percent
+                    ) > 0
+                    ? "+"
+                    : ""
+                }
+
+                ${Number(
+                    data.lightgbm_change_percent
+                ).toFixed(4)}%
+
+            </div>
+
+        </div>
+
+
+        <!-- =================================================
+             MODEL PANELS
+        ================================================= -->
+
+        <div class="panel-grid">
+
+
+            <div class="panel hero-model">
+
+                <p class="label">
+                    LightGBM
+                </p>
+
+                <p class="value">
+
+                    ₹${Number(
+                        data.lightgbm
+                    ).toFixed(4)}
+
+                </p>
+
+                <p class="note">
+
+                    Main machine-learning forecast
+
+                </p>
+
+            </div>
+
+
+            <div class="panel">
+
+                <p class="label">
+                    Random Walk
+                </p>
+
+                <p class="value">
+
+                    ₹${Number(
+                        data.random_walk
+                    ).toFixed(4)}
+
+                </p>
+
+                <p class="note">
+
+                    Tomorrow = latest price
+
+                </p>
+
+            </div>
+
+
+            <div class="panel">
+
+                <p class="label">
+                    PPP
+                </p>
+
+                <p class="value">
+
+                    ₹${Number(
+                        data.ppp
+                    ).toFixed(4)}
+
+                </p>
+
+                <p class="note">
+
+                    CPI-based benchmark
+                    (${data.ppp_cpi_year})
+
+                </p>
+
+            </div>
+
+
+            <div class="panel">
+
+                <p class="label">
+                    IRP
+                </p>
+
+                <p class="value">
+
+                    ₹${Number(
+                        data.irp
+                    ).toFixed(4)}
+
+                </p>
+
+                <p class="note">
+
+                    Interest-rate benchmark
+                    (${data.irp_rate_year})
+
+                </p>
+
+            </div>
+
+
+        </div>
+
+
+        <!-- =================================================
+             EXPLANATION
+        ================================================= -->
+
+        <div class="explain">
+
+            <h2>
+                What am I looking at?
+            </h2>
+
+
+            <p>
+
+                The big number is tomorrow's expected
+                USD/INR exchange rate produced by the
+                LightGBM machine-learning model.
+
+                The model learns from recent price
+                momentum, volatility, moving averages
+                and RSI.
+
+            </p>
+
+
+            <p>
+
+                The benchmark models provide alternative
+                estimates. Random Walk assumes that
+                tomorrow's exchange rate will equal today's
+                rate. PPP uses relative inflation, while
+                IRP uses the difference between Indian and
+                US interest rates.
+
+            </p>
+
+        </div>
+
+
+        <!-- =================================================
+             INTERACTIVE CHART
+        ================================================= -->
+
+        <div id="chart-wrap">
+
+
+            <div class="chart-header">
+
+                <h2>
+                    USD/INR — Last 60 Trading Days
+                </h2>
+
+
+                <div class="chart-controls">
+
+                    <button
+                        class="chart-btn"
+                        id="zoomInBtn"
+                        type="button"
+                    >
+
+                        + Zoom
+
+                    </button>
+
+
+                    <button
+                        class="chart-btn"
+                        id="zoomOutBtn"
+                        type="button"
+                    >
+
+                        − Zoom
+
+                    </button>
+
+
+                    <button
+                        class="chart-btn"
+                        id="resetZoomBtn"
+                        type="button"
+                    >
+
+                        Reset
+
+                    </button>
+
+                </div>
+
+            </div>
+
+
+            <div class="chart-container">
+
+                <canvas id="fxChart"></canvas>
+
+            </div>
+
+
+            <div class="chart-help">
+
+                🖱️ Mouse wheel = Zoom
+
+                &nbsp; · &nbsp;
+
+                🔍 Drag inside chart = Zoom into period
+
+                &nbsp; · &nbsp;
+
+                ✋ Shift + drag = Pan
+
+                &nbsp; · &nbsp;
+
+                Hover = Exact price
+
+            </div>
+
+
+            <div
+                id="chartStatus"
+                class="chart-status"
+            >
+
+                Preparing chart…
+
+            </div>
+
+
+        </div>
+
+    `;
+
+
+    createInteractiveChart(
+        history,
+        data
+    );
+
+}
+
+
+/* =========================================================
+   CREATE CHART
+========================================================= */
+
+function createInteractiveChart(
+    history,
+    data
+){
+
+    const canvas =
+        document.getElementById(
+            "fxChart"
+        );
+
+
+    const status =
+        document.getElementById(
+            "chartStatus"
+        );
+
+
+    if(!canvas){
+
+        console.error(
+            "Canvas not found"
+        );
+
+        return;
+
+    }
+
+
+    if(!history || history.length === 0){
+
+        status.textContent =
+            "No historical data available.";
+
+        return;
+
+    }
+
+
+    /* =====================================================
+       SORT BY DATE
+    ===================================================== */
+
+    history = [...history].sort(
+        function(a,b){
+
+            return new Date(a.date)
+                -
+                new Date(b.date);
+
+        }
+    );
+
+
+    /* =====================================================
+       DATE LABELS
+    ===================================================== */
+
+    const labels =
+        history.map(
+            function(item){
+
+                return item.date;
+
+            }
+        );
+
+
+    /* =====================================================
+       ACTUAL PRICES
+    ===================================================== */
+
+    const actualValues =
+        history.map(
+            function(item){
+
+                return Number(
+                    item.usdinr
+                );
+
+            }
+        );
+
+
+    /* =====================================================
+       FORECAST
+    ===================================================== */
+
+    const lastActual =
+        actualValues[
+            actualValues.length - 1
+        ];
+
+
+    const forecastValue =
+        Number(
+            data.lightgbm
+        );
+
+
+    /*
+       Forecast dataset contains:
+
+       null for all historical points
+       then latest actual
+       then tomorrow forecast
+
+       This creates a clean dashed
+       forecast segment.
+    */
+
+    const forecastLabels = [
+        ...labels,
+        data.forecast_date
+    ];
+
+
+    const forecastValues = [
+
+        ...new Array(
+            actualValues.length - 1
+        ).fill(null),
+
+        lastActual,
+
+        forecastValue
+
+    ];
+
+
+    /* =====================================================
+       DESTROY PREVIOUS CHART
+    ===================================================== */
+
+    if(fxChart){
+
+        fxChart.destroy();
+
+        fxChart = null;
+
+    }
+
+
+    /* =====================================================
+       CREATE CHART
+    ===================================================== */
+
+    try{
+
+        fxChart = new Chart(
+
+            canvas.getContext("2d"),
+
+            {
+
+                type:"line",
+
+
+                data:{
+
+                    labels:forecastLabels,
+
+                    datasets:[
+
+                        /* =================================
+                           ACTUAL
+                        ================================= */
+
+                        {
+
+                            label:
+                                "Actual USD/INR",
+
+                            data:[
+                                ...actualValues,
+                                null
+                            ],
+
+                            borderColor:
+                                "#1a2332",
+
+                            backgroundColor:
+                                "transparent",
+
+                            borderWidth:2,
+
+                            pointRadius:0,
+
+                            pointHoverRadius:5,
+
+                            pointHitRadius:12,
+
+                            tension:0,
+
+                            fill:false
+
+                        },
+
+
+                        /* =================================
+                           LIGHTGBM FORECAST
+                        ================================= */
+
+                        {
+
+                            label:
+                                "LightGBM forecast",
+
+                            data:
+                                forecastValues,
+
+                            borderColor:
+                                "#a9822f",
+
+                            backgroundColor:
+                                "#a9822f",
+
+                            borderWidth:2,
+
+                            borderDash:[
+                                6,
+                                5
+                            ],
+
+                            pointRadius:
+                                function(context){
+
+                                    return context.dataIndex
+                                        === forecastValues.length - 1
+                                        ? 6
+                                        : 0;
+
+                                },
+
+                            pointHoverRadius:8,
+
+                            pointHitRadius:12,
+
+                            tension:0,
+
+                            fill:false
+
+                        }
+
+                    ]
+
+                },
+
+
+                options:{
+
+                    responsive:true,
+
+                    maintainAspectRatio:false,
+
+
+                    /*
+                     * IMPORTANT
+                     *
+                     * category axis is used instead
+                     * of time axis.
+                     *
+                     * Therefore NO date adapter
+                     * is required.
+                     */
+
+                    interaction:{
+
+                        mode:"index",
+
+                        intersect:false
+
+                    },
+
+
+                    plugins:{
+
+                        legend:{
+
+                            display:true,
+
+                            position:"bottom",
+
+                            labels:{
+
+                                font:{
+
+                                    family:
+                                        "'Courier New', monospace",
+
+                                    size:11
+
+                                },
+
+                                usePointStyle:true,
+
+                                padding:20
+
+                            }
+
+                        },
+
+
+                        tooltip:{
+
+                            enabled:true,
+
+                            backgroundColor:
+                                "#1a2332",
+
+                            titleColor:
+                                "#ffffff",
+
+                            bodyColor:
+                                "#ffffff",
+
+                            padding:12,
+
+                            displayColors:true,
+
+                            callbacks:{
+
+                                title:function(
+                                    tooltipItems
+                                ){
+
+                                    if(
+                                        !tooltipItems.length
+                                    ){
+
+                                        return "";
+
+                                    }
+
+
+                                    const index =
+                                        tooltipItems[0]
+                                        .dataIndex;
+
+
+                                    const date =
+                                        forecastLabels[
+                                            index
+                                        ];
+
+
+                                    if(!date){
+
+                                        return "";
+
+                                    }
+
+
+                                    const parsed =
+                                        new Date(
+                                            date
+                                        );
+
+
+                                    if(
+                                        isNaN(
+                                            parsed.getTime()
+                                        )
+                                    ){
+
+                                        return date;
+
+                                    }
+
+
+                                    return parsed.toLocaleDateString(
+                                        "en-GB",
+                                        {
+                                            day:"2-digit",
+                                            month:"short",
+                                            year:"numeric"
+                                        }
+                                    );
+
+                                },
+
+
+                                label:function(
+                                    context
+                                ){
+
+                                    if(
+                                        context.parsed.y === null
+                                    ){
+
+                                        return null;
+
+                                    }
+
+
+                                    return (
+
+                                        context.dataset.label
+                                        +
+                                        ": ₹"
+                                        +
+                                        Number(
+                                            context.parsed.y
+                                        ).toFixed(4)
+
+                                    );
+
+                                }
+
+                            }
+
+                        },
+
+
+                        /* =================================
+                           ZOOM / PAN
+                        ================================= */
+
+                        zoom:{
+
+                            pan:{
+
+                                enabled:true,
+
+                                mode:"x",
+
+                                modifierKey:"shift"
+
+                            },
+
+
+                            zoom:{
+
+                                wheel:{
+
+                                    enabled:true,
+
+                                    speed:0.08
+
+                                },
+
+
+                                pinch:{
+
+                                    enabled:true
+
+                                },
+
+
+                                drag:{
+
+                                    enabled:true,
+
+                                    backgroundColor:
+                                        "rgba(169,130,47,0.15)",
+
+                                    borderColor:
+                                        "#a9822f",
+
+                                    borderWidth:1
+
+                                },
+
+
+                                mode:"x"
+
+                            }
+
+                        }
+
+                    },
+
+
+                    scales:{
+
+                        x:{
+
+                            type:"category",
+
+                            grid:{
+
+                                color:
+                                    "#e2ded4"
+
+                            },
+
+                            ticks:{
+
+                                color:
+                                    "#6b6a5f",
+
+                                font:{
+
+                                    family:
+                                        "'Courier New', monospace",
+
+                                    size:10
+
+                                },
+
+                                maxTicksLimit:8,
+
+                                autoSkip:true,
+
+                                callback:function(
+                                    value,
+                                    index
+                                ){
+
+                                    const date =
+                                        this.getLabelForValue(
+                                            value
+                                        );
+
+
+                                    if(!date){
+
+                                        return "";
+
+                                    }
+
+
+                                    const parsed =
+                                        new Date(
+                                            date
+                                        );
+
+
+                                    if(
+                                        isNaN(
+                                            parsed.getTime()
+                                        )
+                                    ){
+
+                                        return date;
+
+                                    }
+
+
+                                    return parsed.toLocaleDateString(
+                                        "en-GB",
+                                        {
+                                            day:"2-digit",
+                                            month:"short"
+                                        }
+                                    );
+
+                                }
+
+                            }
+
+                        },
+
+
+                        y:{
+
+                            grid:{
+
+                                color:
+                                    "#e2ded4"
+
+                            },
+
+                            ticks:{
+
+                                color:
+                                    "#6b6a5f",
+
+                                font:{
+
+                                    family:
+                                        "'Courier New', monospace",
+
+                                    size:10
+
+                                },
+
+                                callback:function(
+                                    value
+                                ){
+
+                                    return (
+                                        "₹"
+                                        +
+                                        Number(
+                                            value
+                                        ).toFixed(2)
+                                    );
+
+                                }
+
+                            }
+
+                        }
+
+                    }
+
+                }
+
+            }
+
+        );
+
+
+        /* =================================================
+           BUTTON EVENTS
+        ================================================= */
+
+        const zoomIn =
+            document.getElementById(
+                "zoomInBtn"
+            );
+
+
+        const zoomOut =
+            document.getElementById(
+                "zoomOutBtn"
+            );
+
+
+        const reset =
+            document.getElementById(
+                "resetZoomBtn"
+            );
+
+
+        if(zoomIn){
+
+            zoomIn.onclick =
+                function(){
+
+                    if(fxChart){
+
+                        fxChart.zoom(
+                            1.3
+                        );
+
+                    }
+
+                };
+
+        }
+
+
+        if(zoomOut){
+
+            zoomOut.onclick =
+                function(){
+
+                    if(fxChart){
+
+                        fxChart.zoom(
+                            0.7
+                        );
+
+                    }
+
+                };
+
+        }
+
+
+        if(reset){
+
+            reset.onclick =
+                function(){
+
+                    if(fxChart){
+
+                        fxChart.resetZoom();
+
+                    }
+
+                };
+
+        }
+
+
+        /* =================================================
+           STATUS
+        ================================================= */
+
+        status.textContent =
+
+            history.length
+            +
+            " trading days shown · "
+            +
+            "Latest actual: ₹"
+            +
+            Number(
+                data.latest_usdinr
+            ).toFixed(4)
+            +
+            " · Forecast: ₹"
+            +
+            Number(
+                data.lightgbm
+            ).toFixed(4)
+            +
+            " for "
+            +
+            data.forecast_date;
+
+
+    }
+
+    catch(error){
+
+        console.error(
+            "Chart creation error:",
+            error
+        );
+
+
+        status.innerHTML = `
+
+            <span style="color:#a1372f">
+
+                Chart could not be created:
+                ${error.message}
+
+            </span>
+
+        `;
+
+    }
+
+}
+
+
+/* =========================================================
+   START DASHBOARD
+========================================================= */
+
+loadDashboard();
+
+
+</script>
+
+
+</body>
+
+</html>

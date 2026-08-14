@@ -1,0 +1,10 @@
+flask
+flask-cors
+apscheduler
+pandas
+numpy
+requests
+yfinance
+lightgbm
+scikit-learn
+gunicorn
