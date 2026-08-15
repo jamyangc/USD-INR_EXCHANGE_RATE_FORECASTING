@@ -26,6 +26,9 @@ import requests
 import yfinance as yf
 import lightgbm as lgb
 
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 from sklearn.metrics import (
     mean_squared_error,
     mean_absolute_error
@@ -345,12 +348,14 @@ df["fcst_rw"] = df["usdinr"]
 
 
 # ============================================================
-# 4. WORLD BANK FUNCTION
+# 4. WORLD BANK FUNCTION (WITH RETRY / BACKOFF)
 # ============================================================
 
 def get_world_bank_indicator(
     country,
-    indicator
+    indicator,
+    max_retries=5,
+    timeout=60
 ):
 
     url = (
@@ -361,18 +366,28 @@ def get_world_bank_indicator(
         + "?format=json&per_page=100"
     )
 
+    session = requests.Session()
 
-    response = requests.get(
-        url,
-        timeout=30
+    retry_strategy = Retry(
+        total=max_retries,
+        backoff_factor=2,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET"]
     )
 
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+
+    response = session.get(
+        url,
+        timeout=timeout
+    )
 
     response.raise_for_status()
 
-
     data = response.json()
-
 
     if len(data) < 2:
         raise RuntimeError(
@@ -380,9 +395,7 @@ def get_world_bank_indicator(
             f"{country} / {indicator}"
         )
 
-
     records = []
-
 
     for item in data[1]:
 
@@ -395,16 +408,13 @@ def get_world_bank_indicator(
                 }
             )
 
-
     result = pd.DataFrame(
         records
     )
 
-
     result = result.sort_values(
         "year"
     )
-
 
     return result
 
@@ -1566,12 +1576,33 @@ print(
 
 
 # ============================================================
-# 28. SAVE NEXT-DAY FORECAST
+# 28. SAVE NEXT-DAY FORECAST (APPENDING HISTORY LOG)
+# ============================================================
+#
+# This keeps a running record instead of overwriting:
+#
+#   run_timestamp          -> when this script was executed
+#   latest_available_date  -> today's actual known date/price
+#   latest_usdinr           (this is the "today's assumed rate")
+#   forecast_date           -> tomorrow's target date
+#   random_walk / ppp / irp / lightgbm -> tomorrow's predictions
+#
+# If you already saved a forecast for the same forecast_date,
+# it is replaced with this run's latest version rather than
+# duplicated. Different forecast_dates simply accumulate below
+# each other, building a history over time.
 # ============================================================
 
-forecast_output = pd.DataFrame(
+FORECAST_LOG_FILE = "next_day_forecast.csv"
+
+new_row = pd.DataFrame(
     [
         {
+
+            "run_timestamp":
+                pd.Timestamp.now().strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
 
             "latest_available_date":
                 last_known_date.strftime(
@@ -1626,14 +1657,47 @@ forecast_output = pd.DataFrame(
 )
 
 
-forecast_output.to_csv(
-    "next_day_forecast.csv",
+try:
+
+    existing_log = pd.read_csv(
+        FORECAST_LOG_FILE
+    )
+
+    # Drop any earlier row with the same forecast_date so this
+    # run's prediction replaces it instead of duplicating
+
+    existing_log = existing_log[
+        existing_log["forecast_date"]
+        != forecast_date.strftime("%Y-%m-%d")
+    ]
+
+    forecast_log = pd.concat(
+        [existing_log, new_row],
+        ignore_index=True
+    )
+
+except FileNotFoundError:
+
+    forecast_log = new_row
+
+
+forecast_log = forecast_log.sort_values(
+    "forecast_date"
+).reset_index(drop=True)
+
+
+forecast_log.to_csv(
+    FORECAST_LOG_FILE,
     index=False
 )
 
 
 print(
-    "\nSaved: next_day_forecast.csv"
+    f"\nSaved / updated: {FORECAST_LOG_FILE}"
+)
+
+print(
+    f"Total forecast records logged: {len(forecast_log)}"
 )
 
 
