@@ -1,2 +1,2 @@
-latest_available_date,latest_usdinr,forecast_date,random_walk,ppp,irp,lightgbm,lightgbm_change_percent,lightgbm_direction,run_timestamp
-2026-08-15,95.43,2026-08-17,95.43,76.1685,95.4434,95.4453,0.0161,UP,2026-08-15 23:41:44
+latest_available_date,latest_usdinr,forecast_date,random_walk,ppp,irp,lightgbm,lightgbm_change_percent,lightgbm_direction,run_timestamp,ridge,decision_tree,mlp
+2026-08-16,95.43,2026-08-17,95.43,76.1685,95.4434,95.4453,0.0161,UP,2026-08-16 19:30:37,95.4371,95.4445,103.1246

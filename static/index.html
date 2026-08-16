@@ -659,7 +659,7 @@ footer{
 
     <span>MODEL: LIGHTGBM</span>
 
-    <span>BENCHMARKS: RANDOM WALK · PPP · IRP</span>
+    <span>BENCHMARKS: RANDOM WALK · PPP · IRP · RIDGE · DECISION TREE · MLP</span>
 
     <span>DAILY TRADING-DAY FORECAST</span>
 
@@ -1053,6 +1053,75 @@ function render(
             </div>
 
 
+            <div class="panel">
+
+                <p class="label">
+                    Ridge
+                </p>
+
+                <p class="value">
+
+                    ₹${Number(
+                        data.ridge
+                    ).toFixed(4)}
+
+                </p>
+
+                <p class="note">
+
+                    Linear machine-learning model
+
+                </p>
+
+            </div>
+
+
+            <div class="panel">
+
+                <p class="label">
+                    Decision Tree
+                </p>
+
+                <p class="value">
+
+                    ₹${Number(
+                        data.decision_tree
+                    ).toFixed(4)}
+
+                </p>
+
+                <p class="note">
+
+                    Small single-tree model
+
+                </p>
+
+            </div>
+
+
+            <div class="panel">
+
+                <p class="label">
+                    MLP
+                </p>
+
+                <p class="value">
+
+                    ₹${Number(
+                        data.mlp
+                    ).toFixed(4)}
+
+                </p>
+
+                <p class="note">
+
+                    Tiny neural-network model
+
+                </p>
+
+            </div>
+
+
         </div>
 
 
@@ -1087,7 +1156,11 @@ function render(
                 tomorrow's exchange rate will equal today's
                 rate. PPP uses relative inflation, while
                 IRP uses the difference between Indian and
-                US interest rates.
+                US interest rates. Ridge, Decision Tree and
+                MLP are three additional machine-learning
+                models trained on the same recent price
+                data as LightGBM, each learning the
+                relationship differently.
 
             </p>
 

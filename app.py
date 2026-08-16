@@ -15,6 +15,11 @@ import requests
 import yfinance as yf
 import lightgbm as lgb
 
+from sklearn.linear_model import Ridge
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.neural_network import MLPRegressor
+from sklearn.preprocessing import StandardScaler
+
 from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -165,6 +170,40 @@ def create_model():
         objective="regression",
         verbosity=-1,
         n_jobs=-1
+    )
+
+
+# ============================================================
+# RIDGE / DECISION TREE / MLP MODELS
+# ============================================================
+
+def create_ridge_model():
+
+    return Ridge(
+        alpha=1.0,
+        random_state=RANDOM_STATE
+    )
+
+
+def create_tree_model():
+
+    return DecisionTreeRegressor(
+        max_depth=3,
+        min_samples_leaf=10,
+        random_state=RANDOM_STATE
+    )
+
+
+def create_mlp_model():
+
+    return MLPRegressor(
+        hidden_layer_sizes=(8,),
+        activation="relu",
+        solver="adam",
+        alpha=1e-3,
+        learning_rate_init=1e-3,
+        max_iter=2000,
+        random_state=RANDOM_STATE
     )
 
 
@@ -373,6 +412,40 @@ def run_forecast_pipeline():
 
 
     # ========================================================
+    # TRAIN RIDGE / DECISION TREE / MLP
+    # (Ridge and MLP use standardized features;
+    #  the tree is trained on raw features.)
+    # ========================================================
+
+    feature_scaler = StandardScaler()
+
+    train_features_scaled = feature_scaler.fit_transform(
+        train_df[FEATURE_COLS]
+    )
+
+    ridge_model = create_ridge_model()
+
+    ridge_model.fit(
+        train_features_scaled,
+        train_df["target_logret"]
+    )
+
+    tree_model = create_tree_model()
+
+    tree_model.fit(
+        train_df[FEATURE_COLS],
+        train_df["target_logret"]
+    )
+
+    mlp_model = create_mlp_model()
+
+    mlp_model.fit(
+        train_features_scaled,
+        train_df["target_logret"]
+    )
+
+
+    # ========================================================
     # LATEST AVAILABLE DAILY OBSERVATION
     # ========================================================
 
@@ -389,6 +462,10 @@ def run_forecast_pipeline():
             "Latest observation is missing required features."
         )
 
+    latest_features_scaled = feature_scaler.transform(
+        latest_features
+    )
+
 
     # ========================================================
     # LIGHTGBM FORECAST
@@ -401,6 +478,48 @@ def run_forecast_pipeline():
     forecast_lgbm = (
         last_known_price
         * np.exp(predicted_logret)
+    )
+
+
+    # ========================================================
+    # RIDGE FORECAST
+    # ========================================================
+
+    predicted_logret_ridge = ridge_model.predict(
+        latest_features_scaled
+    )[0]
+
+    forecast_ridge = (
+        last_known_price
+        * np.exp(predicted_logret_ridge)
+    )
+
+
+    # ========================================================
+    # DECISION TREE FORECAST
+    # ========================================================
+
+    predicted_logret_tree = tree_model.predict(
+        latest_features
+    )[0]
+
+    forecast_tree = (
+        last_known_price
+        * np.exp(predicted_logret_tree)
+    )
+
+
+    # ========================================================
+    # MLP FORECAST
+    # ========================================================
+
+    predicted_logret_mlp = mlp_model.predict(
+        latest_features_scaled
+    )[0]
+
+    forecast_mlp = (
+        last_known_price
+        * np.exp(predicted_logret_mlp)
     )
 
 
@@ -532,6 +651,15 @@ def run_forecast_pipeline():
         "irp_rate_year":
             latest_rate_year,
 
+        "ridge":
+            round(forecast_ridge, 4),
+
+        "decision_tree":
+            round(forecast_tree, 4),
+
+        "mlp":
+            round(forecast_mlp, 4),
+
         "lightgbm":
             round(forecast_lgbm, 4),
 
@@ -599,7 +727,10 @@ def run_forecast_pipeline():
         f"Forecast completed. "
         f"LightGBM -> "
         f"{forecast_lgbm:.4f} "
-        f"({direction})"
+        f"({direction}) | "
+        f"Ridge -> {forecast_ridge:.4f} | "
+        f"Tree -> {forecast_tree:.4f} | "
+        f"MLP -> {forecast_mlp:.4f}"
     )
 
     return result

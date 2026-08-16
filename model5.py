@@ -4,10 +4,13 @@
 # PERIOD: 2020 TO PRESENT
 #
 # MODELS:
-#   1. Random Walk  -> Benchmark
-#   2. PPP          -> Classical economic model
-#   3. IRP          -> Classical economic model
-#   4. LightGBM     -> Machine Learning model
+#   1. Random Walk    -> Benchmark
+#   2. PPP             -> Classical economic model
+#   3. IRP              -> Classical economic model
+#   4. Ridge            -> Machine Learning model (linear)
+#   5. Decision Tree    -> Machine Learning model (small tree)
+#   6. MLP              -> Machine Learning model (tiny neural net)
+#   7. LightGBM         -> Machine Learning model (gradient boosting)
 #
 # DATA:
 #   USD/INR  -> Yahoo Finance
@@ -28,6 +31,11 @@ import lightgbm as lgb
 
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+from sklearn.linear_model import Ridge
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.neural_network import MLPRegressor
+from sklearn.preprocessing import StandardScaler
 
 from sklearn.metrics import (
     mean_squared_error,
@@ -64,7 +72,7 @@ DAYS_IN_YEAR = 365
 
 print("\n" + "=" * 70)
 print("          USD/INR SHORT-TERM FORECASTING")
-print("   Random Walk vs PPP vs IRP vs LightGBM")
+print("   Random Walk vs PPP vs IRP vs Ridge vs Tree vs MLP vs LightGBM")
 print("=" * 70)
 
 
@@ -183,7 +191,7 @@ print(
 # 2. LIGHTGBM FEATURE ENGINEERING
 # ============================================================
 
-print("\nCreating LightGBM features...")
+print("\nCreating ML features...")
 
 
 # ------------------------------------------------------------
@@ -774,7 +782,14 @@ print(
 
 
 # ============================================================
-# 13. LIGHTGBM MODEL
+# 13. ML MODELS
+# ============================================================
+#
+# LightGBM   -> gradient boosted trees (primary ML model)
+# Ridge      -> linear model, trained on standardized features
+# Decision Tree -> small single tree, trained on raw features
+# MLP        -> tiny one-hidden-layer neural net, standardized
+#               features
 # ============================================================
 
 def create_model():
@@ -800,6 +815,42 @@ def create_model():
         n_jobs=-1
     )
 
+
+    return model
+
+
+def create_ridge_model():
+
+    model = Ridge(
+        alpha=1.0,
+        random_state=RANDOM_STATE
+    )
+
+    return model
+
+
+def create_tree_model():
+
+    model = DecisionTreeRegressor(
+        max_depth=3,
+        min_samples_leaf=10,
+        random_state=RANDOM_STATE
+    )
+
+    return model
+
+
+def create_mlp_model():
+
+    model = MLPRegressor(
+        hidden_layer_sizes=(8,),
+        activation="relu",
+        solver="adam",
+        alpha=1e-3,
+        learning_rate_init=1e-3,
+        max_iter=2000,
+        random_state=RANDOM_STATE
+    )
 
     return model
 
@@ -900,6 +951,127 @@ def walk_forward_lightgbm(
 
 
 # ============================================================
+# 14b. WALK-FORWARD SKLEARN MODELS (RIDGE / TREE / MLP)
+# ============================================================
+#
+# Same walk-forward logic as LightGBM above, generalized for
+# any scikit-learn regressor. When use_scaler=True, a fresh
+# StandardScaler is fit on each training window (Ridge, MLP);
+# the Decision Tree does not need scaling.
+# ============================================================
+
+def walk_forward_sklearn_model(
+    data,
+    model_factory,
+    use_scaler=False,
+    min_train=MIN_TRAIN_DAYS,
+    retrain_every=RETRAIN_EVERY
+):
+
+    n = len(data)
+
+
+    predictions = pd.Series(
+        index=data.index,
+        dtype=float
+    )
+
+
+    model = None
+
+    scaler = None
+
+
+    for i in range(
+        min_train,
+        n - HORIZON
+    ):
+
+
+        if (
+            model is None
+
+            or
+
+            (
+                (i - min_train)
+                % retrain_every
+                == 0
+            )
+        ):
+
+
+            train = data.iloc[
+                :i
+            ].dropna(
+                subset=
+                FEATURE_COLS +
+                ["target_logret"]
+            )
+
+
+            if len(train) < 100:
+                continue
+
+
+            X_train = train[
+                FEATURE_COLS
+            ]
+
+
+            y_train = train[
+                "target_logret"
+            ]
+
+
+            if use_scaler:
+
+                scaler = StandardScaler()
+
+                X_train = scaler.fit_transform(
+                    X_train
+                )
+
+
+            model = model_factory()
+
+
+            model.fit(
+                X_train,
+                y_train
+            )
+
+
+        x_today = data.iloc[
+            [i]
+        ][FEATURE_COLS]
+
+
+        if x_today.isnull().values.any():
+            continue
+
+
+        if use_scaler:
+
+            x_today = scaler.transform(
+                x_today
+            )
+
+
+        prediction = model.predict(
+            x_today
+        )[0]
+
+
+        predictions.iloc[i] = (
+            prediction
+        )
+
+
+    return predictions
+
+
+# ============================================================
 # 15. RUN LIGHTGBM
 # ============================================================
 
@@ -935,6 +1107,101 @@ df["fcst_lgbm"] = (
 
 print(
     "\nLightGBM testing completed."
+)
+
+
+# ============================================================
+# 15b. RUN RIDGE / DECISION TREE / MLP
+# ============================================================
+
+print("\n" + "=" * 70)
+print("        RUNNING WALK-FORWARD RIDGE / TREE / MLP")
+print("=" * 70)
+
+
+print("\nPlease wait...")
+
+
+ridge_predictions = (
+    walk_forward_sklearn_model(
+        df,
+        create_ridge_model,
+        use_scaler=True
+    )
+)
+
+
+df["ridge_logret"] = (
+    ridge_predictions
+)
+
+
+df["fcst_ridge"] = (
+
+    df["usdinr"]
+
+    *
+
+    np.exp(
+        df["ridge_logret"]
+    )
+)
+
+
+tree_predictions = (
+    walk_forward_sklearn_model(
+        df,
+        create_tree_model,
+        use_scaler=False
+    )
+)
+
+
+df["tree_logret"] = (
+    tree_predictions
+)
+
+
+df["fcst_tree"] = (
+
+    df["usdinr"]
+
+    *
+
+    np.exp(
+        df["tree_logret"]
+    )
+)
+
+
+mlp_predictions = (
+    walk_forward_sklearn_model(
+        df,
+        create_mlp_model,
+        use_scaler=True
+    )
+)
+
+
+df["mlp_logret"] = (
+    mlp_predictions
+)
+
+
+df["fcst_mlp"] = (
+
+    df["usdinr"]
+
+    *
+
+    np.exp(
+        df["mlp_logret"]
+    )
+)
+
+
+print(
+    "\nRidge / Decision Tree / MLP testing completed."
 )
 
 
@@ -1172,6 +1439,24 @@ results = [
 
     evaluate_model(
         df,
+        "fcst_ridge",
+        "Ridge"
+    ),
+
+    evaluate_model(
+        df,
+        "fcst_tree",
+        "Decision Tree"
+    ),
+
+    evaluate_model(
+        df,
+        "fcst_mlp",
+        "MLP"
+    ),
+
+    evaluate_model(
+        df,
         "fcst_lgbm",
         "LightGBM"
     )
@@ -1211,11 +1496,11 @@ print(
 
 
 # ============================================================
-# 19. FINAL LIGHTGBM
+# 19. FINAL MODELS (TRAINED ON ALL AVAILABLE DATA)
 # ============================================================
 
 print("\n" + "=" * 70)
-print("             TRAINING FINAL LIGHTGBM")
+print("             TRAINING FINAL MODELS")
 print("=" * 70)
 
 
@@ -1229,7 +1514,7 @@ train_df = df.dropna(
 if len(train_df) < 100:
 
     raise RuntimeError(
-        "Not enough data to train LightGBM."
+        "Not enough data to train the models."
     )
 
 
@@ -1257,6 +1542,48 @@ print(
 )
 
 
+# ------------------------------------------------------------
+# Ridge / Decision Tree / MLP
+# (Ridge and MLP use standardized features; the tree uses the
+# raw features, same as LightGBM.)
+# ------------------------------------------------------------
+
+final_scaler = StandardScaler()
+
+X_train_scaled = final_scaler.fit_transform(
+    X_train
+)
+
+
+final_ridge_model = create_ridge_model()
+
+final_ridge_model.fit(
+    X_train_scaled,
+    y_train
+)
+
+
+final_tree_model = create_tree_model()
+
+final_tree_model.fit(
+    X_train,
+    y_train
+)
+
+
+final_mlp_model = create_mlp_model()
+
+final_mlp_model.fit(
+    X_train_scaled,
+    y_train
+)
+
+
+print(
+    "Final Ridge / Decision Tree / MLP trained using available data."
+)
+
+
 # ============================================================
 # 20. LATEST DATA
 # ============================================================
@@ -1280,8 +1607,15 @@ if latest_features.isnull().values.any():
 
     raise RuntimeError(
         "Latest observation does not have all "
-        "required LightGBM features."
+        "required ML features."
     )
+
+
+latest_features_scaled = (
+    final_scaler.transform(
+        latest_features
+    )
+)
 
 
 # ============================================================
@@ -1303,6 +1637,67 @@ forecast_lgbm = (
 
     np.exp(
         predicted_logret
+    )
+)
+
+
+# ============================================================
+# 21b. RIDGE / DECISION TREE / MLP NEXT-DAY FORECAST
+# ============================================================
+
+predicted_logret_ridge = (
+    final_ridge_model.predict(
+        latest_features_scaled
+    )[0]
+)
+
+
+forecast_ridge = (
+
+    last_known_price
+
+    *
+
+    np.exp(
+        predicted_logret_ridge
+    )
+)
+
+
+predicted_logret_tree = (
+    final_tree_model.predict(
+        latest_features
+    )[0]
+)
+
+
+forecast_tree = (
+
+    last_known_price
+
+    *
+
+    np.exp(
+        predicted_logret_tree
+    )
+)
+
+
+predicted_logret_mlp = (
+    final_mlp_model.predict(
+        latest_features_scaled
+    )[0]
+)
+
+
+forecast_mlp = (
+
+    last_known_price
+
+    *
+
+    np.exp(
+        predicted_logret_mlp
     )
 )
 
@@ -1544,6 +1939,33 @@ print(
 
 
 print(
+    "\nRidge:"
+)
+
+print(
+    f"    {forecast_ridge:.4f}"
+)
+
+
+print(
+    "\nDecision Tree:"
+)
+
+print(
+    f"    {forecast_tree:.4f}"
+)
+
+
+print(
+    "\nMLP:"
+)
+
+print(
+    f"    {forecast_mlp:.4f}"
+)
+
+
+print(
     "\nLightGBM:"
 )
 
@@ -1585,7 +2007,8 @@ print(
 #   latest_available_date  -> today's actual known date/price
 #   latest_usdinr           (this is the "today's assumed rate")
 #   forecast_date           -> tomorrow's target date
-#   random_walk / ppp / irp / lightgbm -> tomorrow's predictions
+#   random_walk / ppp / irp / ridge / decision_tree / mlp /
+#   lightgbm -> tomorrow's predictions
 #
 # If you already saved a forecast for the same forecast_date,
 # it is replaced with this run's latest version rather than
@@ -1635,6 +2058,24 @@ new_row = pd.DataFrame(
             "irp":
                 round(
                     forecast_irp,
+                    4
+                ),
+
+            "ridge":
+                round(
+                    forecast_ridge,
+                    4
+                ),
+
+            "decision_tree":
+                round(
+                    forecast_tree,
+                    4
+                ),
+
+            "mlp":
+                round(
+                    forecast_mlp,
                     4
                 ),
 
@@ -1730,19 +2171,31 @@ print(
 )
 
 print(
-    "  Random Walk = Benchmark"
+    "  Random Walk   = Benchmark"
 )
 
 print(
-    "  PPP         = Classical economic model"
+    "  PPP           = Classical economic model"
 )
 
 print(
-    "  IRP         = Classical economic model"
+    "  IRP           = Classical economic model"
 )
 
 print(
-    "  LightGBM    = Machine Learning model"
+    "  Ridge         = Machine Learning model (linear)"
+)
+
+print(
+    "  Decision Tree = Machine Learning model (small tree)"
+)
+
+print(
+    "  MLP           = Machine Learning model (tiny neural net)"
+)
+
+print(
+    "  LightGBM      = Machine Learning model (gradient boosting)"
 )
 
 
