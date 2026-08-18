@@ -65,6 +65,14 @@ TRANSACTION_COST_BPS = 5
 
 DAYS_IN_YEAR = 365
 
+# --- NEW: safety clip for MLP log-return predictions ---------
+# USD/INR essentially never moves >2% in a single day.
+# The tiny MLP occasionally mis-converges and predicts a
+# log-return several times larger than anything realistic,
+# which blows up into an absurd price forecast after exp().
+# Clipping keeps the MLP output inside a plausible daily range.
+MLP_LOGRET_CLIP = 0.02
+
 
 # ============================================================
 # HEADER
@@ -840,19 +848,38 @@ def create_tree_model():
     return model
 
 
+# --- CHANGED: MLP was diverging (predicting logret ~0.04+,
+# i.e. a >4% one-day move, which is not physically plausible
+# for USD/INR). Switched solver to "lbfgs", which converges
+# far more reliably than "adam" on small tabular datasets like
+# this one, and raised regularization slightly. ---
 def create_mlp_model():
 
     model = MLPRegressor(
         hidden_layer_sizes=(8,),
         activation="relu",
-        solver="adam",
-        alpha=1e-3,
-        learning_rate_init=1e-3,
-        max_iter=2000,
+        solver="lbfgs",
+        alpha=1e-2,
+        max_iter=5000,
         random_state=RANDOM_STATE
     )
 
     return model
+
+
+# --- NEW: hard safety clip applied to any predicted log-return
+# before it gets exponentiated into a price. Used as a guard
+# rail for the MLP specifically, since it's the model most prone
+# to occasional bad fits on a small/noisy target. ---
+def clip_logret(value, limit=MLP_LOGRET_CLIP):
+
+    if value > limit:
+        return limit
+
+    if value < -limit:
+        return -limit
+
+    return value
 
 
 # ============================================================
@@ -958,6 +985,10 @@ def walk_forward_lightgbm(
 # any scikit-learn regressor. When use_scaler=True, a fresh
 # StandardScaler is fit on each training window (Ridge, MLP);
 # the Decision Tree does not need scaling.
+#
+# --- CHANGED: added an optional clip_limit parameter so a
+# model's predicted log-return can be bounded to a plausible
+# daily range before being stored. ---
 # ============================================================
 
 def walk_forward_sklearn_model(
@@ -965,7 +996,8 @@ def walk_forward_sklearn_model(
     model_factory,
     use_scaler=False,
     min_train=MIN_TRAIN_DAYS,
-    retrain_every=RETRAIN_EVERY
+    retrain_every=RETRAIN_EVERY,
+    clip_limit=None
 ):
 
     n = len(data)
@@ -1061,6 +1093,14 @@ def walk_forward_sklearn_model(
         prediction = model.predict(
             x_today
         )[0]
+
+
+        if clip_limit is not None:
+
+            prediction = clip_logret(
+                prediction,
+                clip_limit
+            )
 
 
         predictions.iloc[i] = (
@@ -1178,7 +1218,8 @@ mlp_predictions = (
     walk_forward_sklearn_model(
         df,
         create_mlp_model,
-        use_scaler=True
+        use_scaler=True,
+        clip_limit=MLP_LOGRET_CLIP
     )
 )
 
@@ -1683,10 +1724,19 @@ forecast_tree = (
 )
 
 
+# --- CHANGED: clip the live MLP forecast the same way the
+# walk-forward evaluation does, so the headline number can't
+# blow up either. ---
 predicted_logret_mlp = (
     final_mlp_model.predict(
         latest_features_scaled
     )[0]
+)
+
+
+predicted_logret_mlp = clip_logret(
+    predicted_logret_mlp,
+    MLP_LOGRET_CLIP
 )
 
 

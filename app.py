@@ -37,6 +37,8 @@ MIN_TRAIN_DAYS = 500
 HORIZON = 1
 DAYS_IN_YEAR = 365
 
+MLP_LOGRET_CLIP = 0.02
+
 FORECAST_FILE = os.path.join(
     os.path.dirname(__file__),
     "latest_forecast.json"
@@ -199,12 +201,22 @@ def create_mlp_model():
     return MLPRegressor(
         hidden_layer_sizes=(8,),
         activation="relu",
-        solver="adam",
-        alpha=1e-3,
-        learning_rate_init=1e-3,
-        max_iter=2000,
+        solver="lbfgs",
+        alpha=1e-2,
+        max_iter=5000,
         random_state=RANDOM_STATE
     )
+
+
+def clip_logret(value, limit=MLP_LOGRET_CLIP):
+
+    if value > limit:
+        return limit
+
+    if value < -limit:
+        return -limit
+
+    return value
 
 
 # ============================================================
@@ -511,11 +523,17 @@ def run_forecast_pipeline():
 
     # ========================================================
     # MLP FORECAST
+    # (clipped to a plausible daily log-return range so a
+    # bad-fit MLP run can't blow up into an absurd price)
     # ========================================================
 
     predicted_logret_mlp = mlp_model.predict(
         latest_features_scaled
     )[0]
+
+    predicted_logret_mlp = clip_logret(
+        predicted_logret_mlp
+    )
 
     forecast_mlp = (
         last_known_price
