@@ -23,6 +23,9 @@
 import warnings
 warnings.filterwarnings("ignore")
 
+import json
+import os
+
 import numpy as np
 import pandas as pd
 import requests
@@ -72,6 +75,25 @@ DAYS_IN_YEAR = 365
 # which blows up into an absurd price forecast after exp().
 # Clipping keeps the MLP output inside a plausible daily range.
 MLP_LOGRET_CLIP = 0.02
+
+# ============================================================
+# DASHBOARD JSON EXPORT PATH
+# ============================================================
+#
+# This MUST point at the SAME "latest_forecast.json" that your
+# Flask app.py reads from in its FORECAST_FILE setting.
+#
+# By default this assumes model5.py lives in the SAME FOLDER
+# as app.py (e.g. both inside capstone_BEA_409/). If app.py is
+# in a different folder, change this path to point there
+# directly, e.g.:
+#
+#   DASHBOARD_JSON_FILE = r"C:\path\to\flask_app_folder\latest_forecast.json"
+#
+DASHBOARD_JSON_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "latest_forecast.json"
+)
 
 
 # ============================================================
@@ -2189,6 +2211,79 @@ print(
 
 print(
     f"Total forecast records logged: {len(forecast_log)}"
+)
+
+
+# ============================================================
+# 28b. EXPORT TO DASHBOARD JSON (latest_forecast.json)
+# ============================================================
+#
+# This writes the SAME file that app.py's /api/predict route
+# reads from (FORECAST_FILE), using identical field names.
+# Once this runs, refreshing the dashboard (or just hitting
+# /api/predict) will immediately show this run's numbers —
+# no need to call /api/refresh or restart Flask.
+#
+# IMPORTANT: DASHBOARD_JSON_FILE (set near the top of this
+# file) must point at the exact same "latest_forecast.json"
+# that app.py uses. If model5.py and app.py are in different
+# folders, edit DASHBOARD_JSON_FILE above to the correct path.
+# ============================================================
+
+dashboard_result = {
+
+    "latest_available_date":
+        last_known_date.strftime("%Y-%m-%d"),
+
+    "latest_usdinr":
+        round(last_known_price, 4),
+
+    "forecast_date":
+        forecast_date.strftime("%Y-%m-%d"),
+
+    "random_walk":
+        round(forecast_rw, 4),
+
+    "ppp":
+        round(forecast_ppp, 4),
+
+    "ppp_cpi_year":
+        latest_ppp_year,
+
+    "irp":
+        round(forecast_irp, 4),
+
+    "irp_rate_year":
+        latest_rate_year,
+
+    "ridge":
+        round(forecast_ridge, 4),
+
+    "decision_tree":
+        round(forecast_tree, 4),
+
+    "mlp":
+        round(forecast_mlp, 4),
+
+    "lightgbm":
+        round(forecast_lgbm, 4),
+
+    "lightgbm_change_percent":
+        round(lightgbm_change_pct, 4),
+
+    "lightgbm_direction":
+        direction,
+
+    "generated_at":
+        pd.Timestamp.now().isoformat()
+
+}
+
+with open(DASHBOARD_JSON_FILE, "w") as f:
+    json.dump(dashboard_result, f, indent=2)
+
+print(
+    f"\nSaved / updated dashboard file: {DASHBOARD_JSON_FILE}"
 )
 
 

@@ -1,17 +1,17 @@
 {
-  "latest_available_date": "2026-08-16",
-  "latest_usdinr": 95.43,
-  "forecast_date": "2026-08-17",
-  "random_walk": 95.43,
+  "latest_available_date": "2026-08-18",
+  "latest_usdinr": 95.67,
+  "forecast_date": "2026-08-19",
+  "random_walk": 95.67,
   "ppp": 76.1685,
   "ppp_cpi_year": 2024,
-  "irp": 95.4434,
+  "irp": 95.6835,
   "irp_rate_year": 2021,
-  "ridge": 95.4371,
-  "decision_tree": 95.4445,
-  "mlp": 103.1246,
-  "lightgbm": 95.4453,
-  "lightgbm_change_percent": 0.0161,
+  "ridge": 95.6697,
+  "decision_tree": 95.6847,
+  "mlp": 95.6391,
+  "lightgbm": 95.7122,
+  "lightgbm_change_percent": 0.0441,
   "lightgbm_direction": "UP",
-  "generated_at": "2026-08-16T19:38:46.516488"
+  "generated_at": "2026-08-18T18:28:47.463455"
 }
