@@ -745,6 +745,26 @@ const content =
 
 
 /* =========================================================
+   MODEL DEFINITIONS
+   ( key in the /api/predict payload,
+     label shown in legend,
+     line color )
+========================================================= */
+
+const MODELS = [
+
+    { key:"lightgbm",      label:"LightGBM",      color:"#a9822f", width:2.5 },
+    { key:"random_walk",   label:"Random Walk",   color:"#6b6a5f", width:1.5 },
+    { key:"ppp",           label:"PPP",           color:"#2f6d9f", width:1.5 },
+    { key:"irp",           label:"IRP",           color:"#7a4fa0", width:1.5 },
+    { key:"ridge",         label:"Ridge",         color:"#2f6d4f", width:1.5 },
+    { key:"decision_tree", label:"Decision Tree", color:"#a1372f", width:1.5 },
+    { key:"mlp",           label:"MLP",           color:"#c26b1f", width:1.5 }
+
+];
+
+
+/* =========================================================
    DIRECTION PILL
 ========================================================= */
 
@@ -1243,6 +1263,10 @@ function render(
 
                 Hover = Exact price
 
+                &nbsp; · &nbsp;
+
+                Click a legend name = Show/hide that model
+
             </div>
 
 
@@ -1357,7 +1381,7 @@ function createInteractiveChart(
 
 
     /* =====================================================
-       FORECAST
+       FORECAST LABELS (history + tomorrow)
     ===================================================== */
 
     const lastActual =
@@ -1366,40 +1390,41 @@ function createInteractiveChart(
         ];
 
 
-    const forecastValue =
-        Number(
-            data.lightgbm
-        );
-
-
-    /*
-       Forecast dataset contains:
-
-       null for all historical points
-       then latest actual
-       then tomorrow forecast
-
-       This creates a clean dashed
-       forecast segment.
-    */
-
     const forecastLabels = [
         ...labels,
         data.forecast_date
     ];
 
 
-    const forecastValues = [
+    /*
+       Build one forecast series per model.
 
-        ...new Array(
-            actualValues.length - 1
-        ).fill(null),
+       Each series is:
+       null for all historical points except the
+       last one (so the dashed line starts exactly
+       where the actual line ends), then the
+       model's forecast value for tomorrow.
+    */
 
-        lastActual,
+    function buildForecastSeries(modelValue){
 
-        forecastValue
+        return [
 
-    ];
+            ...new Array(
+                actualValues.length - 1
+            ).fill(null),
+
+            lastActual,
+
+            Number(modelValue)
+
+        ];
+
+    }
+
+
+    const forecastSeriesLength =
+        actualValues.length + 1;
 
 
     /* =====================================================
@@ -1420,6 +1445,61 @@ function createInteractiveChart(
     ===================================================== */
 
     try{
+
+        const forecastDatasets =
+            MODELS.map(
+                function(model){
+
+                    const series =
+                        buildForecastSeries(
+                            data[model.key]
+                        );
+
+                    return {
+
+                        label:
+                            model.label + " forecast",
+
+                        data:
+                            series,
+
+                        borderColor:
+                            model.color,
+
+                        backgroundColor:
+                            model.color,
+
+                        borderWidth:
+                            model.width,
+
+                        borderDash:[
+                            6,
+                            5
+                        ],
+
+                        pointRadius:
+                            function(context){
+
+                                return context.dataIndex
+                                    === forecastSeriesLength - 1
+                                    ? (model.key === "lightgbm" ? 6 : 4)
+                                    : 0;
+
+                            },
+
+                        pointHoverRadius:8,
+
+                        pointHitRadius:12,
+
+                        tension:0,
+
+                        fill:false
+
+                    };
+
+                }
+            );
+
 
         fxChart = new Chart(
 
@@ -1472,49 +1552,11 @@ function createInteractiveChart(
 
 
                         /* =================================
-                           LIGHTGBM FORECAST
+                           ONE DASHED FORECAST LINE
+                           PER MODEL
                         ================================= */
 
-                        {
-
-                            label:
-                                "LightGBM forecast",
-
-                            data:
-                                forecastValues,
-
-                            borderColor:
-                                "#a9822f",
-
-                            backgroundColor:
-                                "#a9822f",
-
-                            borderWidth:2,
-
-                            borderDash:[
-                                6,
-                                5
-                            ],
-
-                            pointRadius:
-                                function(context){
-
-                                    return context.dataIndex
-                                        === forecastValues.length - 1
-                                        ? 6
-                                        : 0;
-
-                                },
-
-                            pointHoverRadius:8,
-
-                            pointHitRadius:12,
-
-                            tension:0,
-
-                            fill:false
-
-                        }
+                        ...forecastDatasets
 
                     ]
 
@@ -1568,7 +1610,9 @@ function createInteractiveChart(
 
                                 usePointStyle:true,
 
-                                padding:20
+                                padding:16,
+
+                                boxWidth:10
 
                             }
 
@@ -1966,7 +2010,7 @@ function createInteractiveChart(
                 data.latest_usdinr
             ).toFixed(4)
             +
-            " · Forecast: ₹"
+            " · LightGBM forecast: ₹"
             +
             Number(
                 data.lightgbm
