@@ -780,6 +780,32 @@ def index():
 
 
 # ============================================================
+# PWA FILES
+# (must be served at the ROOT path, not under /static,
+#  since index.html requests them as "./manifest.json" and
+#  "./service-worker.js" — and a service worker can only
+#  control the scope it is served from)
+# ============================================================
+
+@app.route("/manifest.json")
+def manifest():
+
+    return send_from_directory(
+        "static",
+        "manifest.json"
+    )
+
+
+@app.route("/service-worker.js")
+def service_worker():
+
+    return send_from_directory(
+        "static",
+        "service-worker.js"
+    )
+
+
+# ============================================================
 # FORECAST API
 # ============================================================
 
