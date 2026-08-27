@@ -1,20 +1,33 @@
 // service-worker.js
-// Place this in the SAME folder Flask serves index.html from
-// (e.g. your Flask "static" or "templates" root, whichever the browser loads it from)
+// Place inside your Flask "static" folder, alongside index.html
 
-const CACHE_NAME = 'usdinr-forecast-cache-v1';
+const CACHE_NAME = 'usdinr-forecast-cache-v2';
 
-// The page itself (adjust filename if Flask serves it under a different route)
+// Everything needed to render the page even with no internet:
+// your own files + the external CDN scripts the page depends on.
 const APP_SHELL = [
   './',
   './index.html',
-  './manifest.json'
+  './manifest.json',
+  'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js',
+  'https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js',
+  'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js'
 ];
 
-// ---- INSTALL: cache the app shell ----
+// ---- INSTALL: cache the app shell (including CDN scripts) ----
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
+    caches.open(CACHE_NAME).then((cache) => {
+      // Cache each file individually so one failed CDN fetch
+      // doesn't block the whole install.
+      return Promise.all(
+        APP_SHELL.map((url) =>
+          cache.add(url).catch((err) => {
+            console.warn('Failed to cache during install:', url, err);
+          })
+        )
+      );
+    })
   );
   self.skipWaiting();
 });
@@ -33,9 +46,8 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = event.request.url;
 
-  // API calls (/api/predict, /api/history): network-first, cache fallback.
-  // This is what makes "offline mode" actually work for this app --
-  // last successful API response gets served when there's no connection.
+  // API calls: network-first, cache fallback (always try to get the
+  // freshest forecast; fall back to the last successful one offline)
   if (url.includes('/api/predict') || url.includes('/api/history')) {
     event.respondWith(
       fetch(event.request)
@@ -49,7 +61,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Everything else (the HTML page itself, CDN scripts): cache-first, network fallback
+  // Everything else (page, CDN scripts): cache-first, network fallback
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request))
   );
