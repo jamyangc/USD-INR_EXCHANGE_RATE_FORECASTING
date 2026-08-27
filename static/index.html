@@ -8,6 +8,13 @@
 
 <title>USD/INR Tomorrow</title>
 
+<!-- =========================================================
+     PWA MANIFEST (installable + offline support)
+========================================================= -->
+
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#0f172a">
+
 
 <!-- =========================================================
      CHART.JS
@@ -546,6 +553,25 @@ main{
 
 
 /* =========================================================
+   SYNC STATUS (offline/online indicator)
+========================================================= */
+
+.sync-status{
+
+    display:inline-block;
+
+    margin-left:12px;
+
+    font-family:'Courier New',monospace;
+
+    font-size:0.8rem;
+
+    color:var(--muted);
+
+}
+
+
+/* =========================================================
    FOOTER
 ========================================================= */
 
@@ -678,6 +704,7 @@ footer{
 
     <h1>
         Where does the rupee land tomorrow?
+        <span id="sync-status" class="sync-status"></span>
     </h1>
 
     <p class="sub">
@@ -742,6 +769,9 @@ let fxChart = null;
 
 const content =
     document.getElementById("content");
+
+const syncStatus =
+    document.getElementById("sync-status");
 
 
 /* =========================================================
@@ -858,6 +888,16 @@ async function loadDashboard(){
         );
 
 
+        if(syncStatus){
+
+            syncStatus.textContent =
+                navigator.onLine
+                    ? "· live"
+                    : "· offline (last saved data)";
+
+        }
+
+
     }
 
     catch(error){
@@ -890,6 +930,14 @@ async function loadDashboard(){
             </small>
 
         `;
+
+
+        if(syncStatus){
+
+            syncStatus.textContent =
+                "· offline (no cached data yet)";
+
+        }
 
     }
 
@@ -2043,6 +2091,61 @@ function createInteractiveChart(
         `;
 
     }
+
+}
+
+
+/* =========================================================
+   ONLINE / OFFLINE EVENTS
+========================================================= */
+
+window.addEventListener("offline", function(){
+
+    if(syncStatus){
+
+        syncStatus.textContent =
+            "· offline (last saved data)";
+
+    }
+
+});
+
+
+window.addEventListener("online", function(){
+
+    loadDashboard();
+
+});
+
+
+/* =========================================================
+   REGISTER SERVICE WORKER (offline support)
+========================================================= */
+
+if("serviceWorker" in navigator){
+
+    window.addEventListener("load", function(){
+
+        navigator.serviceWorker
+            .register("./service-worker.js")
+            .then(function(reg){
+
+                console.log(
+                    "Service worker registered:",
+                    reg.scope
+                );
+
+            })
+            .catch(function(err){
+
+                console.error(
+                    "Service worker registration failed:",
+                    err
+                );
+
+            });
+
+    });
 
 }
 
