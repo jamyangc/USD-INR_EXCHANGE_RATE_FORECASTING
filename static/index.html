@@ -15,6 +15,15 @@
 <link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#0f172a">
 
+<!-- iOS-specific PWA tags (manifest.json alone isn't enough
+     for iOS — without these, "Add to Home Screen" opens a
+     regular Safari tab with the address bar instead of a
+     true standalone app) -->
+<link rel="apple-touch-icon" href="./static/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FX Forecast">
+
 
 <!-- =========================================================
      CHART.JS
