@@ -884,7 +884,7 @@ def refresh():
 
 @app.route(
     "/api/refresh-cron",
-    methods=["GET"]
+    methods=["GET", "POST"]
 )
 def refresh_cron():
 
