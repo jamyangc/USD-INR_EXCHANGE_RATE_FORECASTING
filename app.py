@@ -780,32 +780,6 @@ def index():
 
 
 # ============================================================
-# PWA FILES
-# (must be served at the ROOT path, not under /static,
-#  since index.html requests them as "./manifest.json" and
-#  "./service-worker.js" — and a service worker can only
-#  control the scope it is served from)
-# ============================================================
-
-@app.route("/manifest.json")
-def manifest():
-
-    return send_from_directory(
-        "static",
-        "manifest.json"
-    )
-
-
-@app.route("/service-worker.js")
-def service_worker():
-
-    return send_from_directory(
-        "static",
-        "service-worker.js"
-    )
-
-
-# ============================================================
 # FORECAST API
 # ============================================================
 
@@ -886,6 +860,33 @@ def history():
     methods=["POST"]
 )
 def refresh():
+
+    try:
+
+        result = run_forecast_pipeline()
+
+        return jsonify(result)
+
+    except Exception as e:
+
+        return jsonify({
+            "error": str(e)
+        }), 500
+
+
+# ============================================================
+# CRON-FRIENDLY REFRESH (GET)
+# Some free cron services (e.g. cron-job.org) only send GET
+# requests. This is a GET-accessible alias of /api/refresh so
+# those services can trigger the pipeline without needing a
+# POST option.
+# ============================================================
+
+@app.route(
+    "/api/refresh-cron",
+    methods=["GET"]
+)
+def refresh_cron():
 
     try:
 
