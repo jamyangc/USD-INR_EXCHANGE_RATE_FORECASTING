@@ -39,13 +39,15 @@ DAYS_IN_YEAR = 365
 
 MLP_LOGRET_CLIP = 0.02
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 FORECAST_FILE = os.path.join(
-    os.path.dirname(__file__),
+    BASE_DIR,
     "latest_forecast.json"
 )
 
 HISTORY_FILE = os.path.join(
-    os.path.dirname(__file__),
+    BASE_DIR,
     "history.json"
 )
 
@@ -70,18 +72,24 @@ FEATURE_COLS = [
 def get_world_bank_indicator(country, indicator):
 
     url = (
-        f"https://api.worldbank.org/v2/country/{country}/indicator/"
-        f"{indicator}?format=json&per_page=100"
+        f"https://api.worldbank.org/v2/country/"
+        f"{country}/indicator/{indicator}"
+        f"?format=json&per_page=100"
     )
 
-    response = requests.get(url, timeout=30)
+    response = requests.get(
+        url,
+        timeout=30
+    )
+
     response.raise_for_status()
 
     data = response.json()
 
-    if len(data) < 2:
+    if len(data) < 2 or data[1] is None:
         raise RuntimeError(
-            f"No World Bank data found for {country} / {indicator}"
+            f"No World Bank data found for "
+            f"{country} / {indicator}"
         )
 
     records = [
@@ -92,6 +100,12 @@ def get_world_bank_indicator(country, indicator):
         for item in data[1]
         if item["value"] is not None
     ]
+
+    if not records:
+        raise RuntimeError(
+            f"No usable World Bank data found for "
+            f"{country} / {indicator}"
+        )
 
     return pd.DataFrame(records).sort_values("year")
 
@@ -109,12 +123,35 @@ def build_features(df):
     df["ret_10"] = df["usdinr"].pct_change(10)
     df["ret_20"] = df["usdinr"].pct_change(20)
 
-    df["vol_5"] = df["ret_1"].rolling(5).std()
-    df["vol_20"] = df["ret_1"].rolling(20).std()
+    df["vol_5"] = (
+        df["ret_1"]
+        .rolling(5)
+        .std()
+    )
 
-    df["ma_5"] = df["usdinr"].rolling(5).mean()
-    df["ma_20"] = df["usdinr"].rolling(20).mean()
-    df["ma_50"] = df["usdinr"].rolling(50).mean()
+    df["vol_20"] = (
+        df["ret_1"]
+        .rolling(20)
+        .std()
+    )
+
+    df["ma_5"] = (
+        df["usdinr"]
+        .rolling(5)
+        .mean()
+    )
+
+    df["ma_20"] = (
+        df["usdinr"]
+        .rolling(20)
+        .mean()
+    )
+
+    df["ma_50"] = (
+        df["usdinr"]
+        .rolling(50)
+        .mean()
+    )
 
     df["price_ma5_ratio"] = (
         df["usdinr"] / df["ma_5"]
@@ -128,6 +165,7 @@ def build_features(df):
         df["ma_5"] / df["ma_20"]
     )
 
+    # RSI(14)
     delta = df["usdinr"].diff()
 
     gain = (
@@ -148,6 +186,7 @@ def build_features(df):
         100 - 100 / (1 + rs)
     )
 
+    # One-day-ahead log return target
     df["target_logret"] = np.log(
         df["usdinr"].shift(-HORIZON)
         / df["usdinr"]
@@ -176,7 +215,7 @@ def create_model():
 
 
 # ============================================================
-# RIDGE / DECISION TREE / MLP MODELS
+# RIDGE MODEL
 # ============================================================
 
 def create_ridge_model():
@@ -187,6 +226,10 @@ def create_ridge_model():
     )
 
 
+# ============================================================
+# DECISION TREE MODEL
+# ============================================================
+
 def create_tree_model():
 
     return DecisionTreeRegressor(
@@ -195,6 +238,10 @@ def create_tree_model():
         random_state=RANDOM_STATE
     )
 
+
+# ============================================================
+# MLP MODEL
+# ============================================================
 
 def create_mlp_model():
 
@@ -208,7 +255,14 @@ def create_mlp_model():
     )
 
 
-def clip_logret(value, limit=MLP_LOGRET_CLIP):
+# ============================================================
+# CLIP MLP LOG RETURN
+# ============================================================
+
+def clip_logret(
+    value,
+    limit=MLP_LOGRET_CLIP
+):
 
     if value > limit:
         return limit
@@ -248,20 +302,34 @@ def run_forecast_pipeline():
             "Could not download USD/INR data from Yahoo Finance."
         )
 
+    # Handle MultiIndex columns returned by newer yfinance versions
     if isinstance(fx.columns, pd.MultiIndex):
         fx.columns = fx.columns.get_level_values(0)
 
-    fx = (
-        fx.reset_index()
-        .rename(
-            columns={
-                "Date": "date",
-                "Close": "usdinr"
-            }
-        )
+    # Reset index
+    fx = fx.reset_index()
+
+    # Rename columns
+    fx = fx.rename(
+        columns={
+            "Date": "date",
+            "Close": "usdinr"
+        }
     )
 
-    df = fx[["date", "usdinr"]].copy()
+    if "date" not in fx.columns:
+        raise RuntimeError(
+            "Yahoo Finance data does not contain a Date column."
+        )
+
+    if "usdinr" not in fx.columns:
+        raise RuntimeError(
+            "Yahoo Finance data does not contain a Close column."
+        )
+
+    df = fx[
+        ["date", "usdinr"]
+    ].copy()
 
     df["date"] = pd.to_datetime(
         df["date"],
@@ -280,7 +348,8 @@ def run_forecast_pipeline():
     ].copy()
 
     df = (
-        df.sort_values("date")
+        df
+        .sort_values("date")
         .drop_duplicates(subset="date")
         .reset_index(drop=True)
     )
@@ -290,10 +359,16 @@ def run_forecast_pipeline():
             "No USD/INR observations available from 2020 onward."
         )
 
+    if len(df) < MIN_TRAIN_DAYS:
+        raise RuntimeError(
+            f"Not enough USD/INR observations. "
+            f"Required: {MIN_TRAIN_DAYS}, "
+            f"available: {len(df)}."
+        )
+
     df["year"] = df["date"].dt.year
 
     df = build_features(df)
-
 
     # ========================================================
     # PPP
@@ -304,7 +379,11 @@ def run_forecast_pipeline():
             "IND",
             "FP.CPI.TOTL"
         )
-        .rename(columns={"value": "india_cpi"})
+        .rename(
+            columns={
+                "value": "india_cpi"
+            }
+        )
     )
 
     usa_cpi = (
@@ -312,7 +391,11 @@ def run_forecast_pipeline():
             "USA",
             "FP.CPI.TOTL"
         )
-        .rename(columns={"value": "usa_cpi"})
+        .rename(
+            columns={
+                "value": "usa_cpi"
+            }
+        )
     )
 
     cpi = pd.merge(
@@ -365,7 +448,6 @@ def run_forecast_pipeline():
         )
     )
 
-
     # ========================================================
     # IRP
     # ========================================================
@@ -375,7 +457,11 @@ def run_forecast_pipeline():
             "IND",
             "FR.INR.LEND"
         )
-        .rename(columns={"value": "india_rate"})
+        .rename(
+            columns={
+                "value": "india_rate"
+            }
+        )
     )
 
     usa_rate = (
@@ -383,7 +469,11 @@ def run_forecast_pipeline():
             "USA",
             "FR.INR.LEND"
         )
-        .rename(columns={"value": "usa_rate"})
+        .rename(
+            columns={
+                "value": "usa_rate"
+            }
+        )
     )
 
     rates = pd.merge(
@@ -401,19 +491,24 @@ def run_forecast_pipeline():
         rates["usa_rate"] / 100
     )
 
-
     # ========================================================
-    # TRAIN LIGHTGBM
+    # TRAINING DATA
     # ========================================================
 
     train_df = df.dropna(
         subset=FEATURE_COLS + ["target_logret"]
-    )
+    ).copy()
 
-    if len(train_df) < 100:
+    if len(train_df) < MIN_TRAIN_DAYS:
         raise RuntimeError(
-            "Not enough data to train LightGBM."
+            f"Not enough usable training observations. "
+            f"Required: {MIN_TRAIN_DAYS}, "
+            f"available: {len(train_df)}."
         )
+
+    # ========================================================
+    # TRAIN LIGHTGBM
+    # ========================================================
 
     model = create_model()
 
@@ -422,17 +517,19 @@ def run_forecast_pipeline():
         train_df["target_logret"]
     )
 
-
     # ========================================================
     # TRAIN RIDGE / DECISION TREE / MLP
     # ========================================================
 
     feature_scaler = StandardScaler()
 
-    train_features_scaled = feature_scaler.fit_transform(
-        train_df[FEATURE_COLS]
+    train_features_scaled = (
+        feature_scaler.fit_transform(
+            train_df[FEATURE_COLS]
+        )
     )
 
+    # Ridge
     ridge_model = create_ridge_model()
 
     ridge_model.fit(
@@ -440,6 +537,7 @@ def run_forecast_pipeline():
         train_df["target_logret"]
     )
 
+    # Decision Tree
     tree_model = create_tree_model()
 
     tree_model.fit(
@@ -447,13 +545,13 @@ def run_forecast_pipeline():
         train_df["target_logret"]
     )
 
+    # MLP
     mlp_model = create_mlp_model()
 
     mlp_model.fit(
         train_features_scaled,
         train_df["target_logret"]
     )
-
 
     # ========================================================
     # LATEST AVAILABLE DAILY OBSERVATION
@@ -465,17 +563,20 @@ def run_forecast_pipeline():
         df["usdinr"].iloc[-1]
     )
 
-    latest_features = df.iloc[[-1]][FEATURE_COLS]
+    latest_features = (
+        df.iloc[[-1]][FEATURE_COLS]
+    )
 
     if latest_features.isnull().values.any():
         raise RuntimeError(
             "Latest observation is missing required features."
         )
 
-    latest_features_scaled = feature_scaler.transform(
-        latest_features
+    latest_features_scaled = (
+        feature_scaler.transform(
+            latest_features
+        )
     )
-
 
     # ========================================================
     # LIGHTGBM FORECAST
@@ -490,42 +591,45 @@ def run_forecast_pipeline():
         * np.exp(predicted_logret)
     )
 
-
     # ========================================================
     # RIDGE FORECAST
     # ========================================================
 
-    predicted_logret_ridge = ridge_model.predict(
-        latest_features_scaled
-    )[0]
+    predicted_logret_ridge = (
+        ridge_model.predict(
+            latest_features_scaled
+        )[0]
+    )
 
     forecast_ridge = (
         last_known_price
         * np.exp(predicted_logret_ridge)
     )
 
-
     # ========================================================
     # DECISION TREE FORECAST
     # ========================================================
 
-    predicted_logret_tree = tree_model.predict(
-        latest_features
-    )[0]
+    predicted_logret_tree = (
+        tree_model.predict(
+            latest_features
+        )[0]
+    )
 
     forecast_tree = (
         last_known_price
         * np.exp(predicted_logret_tree)
     )
 
-
     # ========================================================
     # MLP FORECAST
     # ========================================================
 
-    predicted_logret_mlp = mlp_model.predict(
-        latest_features_scaled
-    )[0]
+    predicted_logret_mlp = (
+        mlp_model.predict(
+            latest_features_scaled
+        )[0]
+    )
 
     predicted_logret_mlp = clip_logret(
         predicted_logret_mlp
@@ -535,7 +639,6 @@ def run_forecast_pipeline():
         last_known_price
         * np.exp(predicted_logret_mlp)
     )
-
 
     # ========================================================
     # PPP FORECAST
@@ -555,7 +658,6 @@ def run_forecast_pipeline():
     latest_ppp_year = int(
         latest_ppp_row["year"]
     )
-
 
     # ========================================================
     # IRP FORECAST
@@ -593,13 +695,11 @@ def run_forecast_pipeline():
         ) ** (1 / DAYS_IN_YEAR)
     )
 
-
     # ========================================================
     # RANDOM WALK
     # ========================================================
 
     forecast_rw = last_known_price
-
 
     # ========================================================
     # TOMORROW'S BUSINESS DAY
@@ -610,9 +710,8 @@ def run_forecast_pipeline():
         + pd.tseries.offsets.BDay(1)
     )
 
-
     # ========================================================
-    # DIRECTION
+    # LIGHTGBM DIRECTION
     # ========================================================
 
     if forecast_lgbm > last_known_price:
@@ -627,13 +726,11 @@ def run_forecast_pipeline():
 
         direction = "FLAT"
 
-
     change_pct = (
         (forecast_lgbm - last_known_price)
         / last_known_price
         * 100
     )
-
 
     # ========================================================
     # RESULT
@@ -688,14 +785,14 @@ def run_forecast_pipeline():
 
     }
 
-
     # ========================================================
     # SAVE FORECAST
     # ========================================================
 
     with open(
         FORECAST_FILE,
-        "w"
+        "w",
+        encoding="utf-8"
     ) as f:
 
         json.dump(
@@ -703,7 +800,6 @@ def run_forecast_pipeline():
             f,
             indent=2
         )
-
 
     # ========================================================
     # SAVE LAST 60 DAYS
@@ -726,7 +822,8 @@ def run_forecast_pipeline():
 
     with open(
         HISTORY_FILE,
-        "w"
+        "w",
+        encoding="utf-8"
     ) as f:
 
         json.dump(
@@ -735,6 +832,9 @@ def run_forecast_pipeline():
             indent=2
         )
 
+    # ========================================================
+    # LOG
+    # ========================================================
 
     print(
         f"[{datetime.now()}] "
@@ -777,11 +877,7 @@ def index():
 
 # ============================================================
 # SERVICE WORKER
-# IMPORTANT:
-# The service worker is physically inside /static,
-# but this route exposes it at the root:
-# /service-worker.js
-# This gives it control over the whole dashboard.
+# Expose /service-worker.js from the root.
 # ============================================================
 
 @app.route("/service-worker.js")
@@ -816,7 +912,8 @@ def predict():
     try:
 
         with open(
-            FORECAST_FILE
+            FORECAST_FILE,
+            encoding="utf-8"
         ) as f:
 
             return jsonify(
@@ -852,7 +949,8 @@ def history():
     try:
 
         with open(
-            HISTORY_FILE
+            HISTORY_FILE,
+            encoding="utf-8"
         ) as f:
 
             return jsonify(
@@ -890,9 +988,8 @@ def refresh():
 
 
 # ============================================================
-# CRON-FRIENDLY REFRESH (GET)
-# Some free cron services (e.g. cron-job.org) only send GET
-# requests. This is a GET-accessible alias of /api/refresh.
+# CRON-FRIENDLY REFRESH
+# Supports GET and POST.
 # ============================================================
 
 @app.route(
@@ -916,23 +1013,39 @@ def refresh_cron():
 
 # ============================================================
 # DAILY TRADING-DAY SCHEDULER
+#
+# IMPORTANT:
+# Do not start APScheduler when using Gunicorn workers.
+# Set ENABLE_SCHEDULER=true if you specifically want the
+# in-process scheduler enabled.
 # ============================================================
 
-scheduler = BackgroundScheduler(
-    timezone="Asia/Kolkata"
-)
+scheduler = None
 
-scheduler.add_job(
-    run_forecast_pipeline,
-    "cron",
-    day_of_week="mon-fri",
-    hour=18,
-    minute=0,
-    max_instances=1,
-    coalesce=True
-)
+if os.environ.get(
+    "ENABLE_SCHEDULER",
+    "false"
+).lower() == "true":
 
-scheduler.start()
+    scheduler = BackgroundScheduler(
+        timezone="Asia/Kolkata"
+    )
+
+    scheduler.add_job(
+        run_forecast_pipeline,
+        "cron",
+        day_of_week="mon-fri",
+        hour=18,
+        minute=0,
+        max_instances=1,
+        coalesce=True
+    )
+
+    scheduler.start()
+
+    print(
+        "APScheduler started."
+    )
 
 
 # ============================================================
@@ -943,6 +1056,7 @@ if __name__ == "__main__":
 
     # Run once when starting the application
     # if no forecast exists yet.
+
     if not os.path.exists(
         FORECAST_FILE
     ):
