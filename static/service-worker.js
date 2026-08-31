@@ -1,14 +1,17 @@
 // service-worker.js
 // Place inside your Flask "static" folder, alongside index.html
 
-const CACHE_NAME = 'usdinr-forecast-cache-v3';
+const CACHE_NAME = 'usdinr-forecast-cache-v4';
 
 // Everything needed to render the page even with no internet:
 // your own files + the external CDN scripts the page depends on.
 const APP_SHELL = [
-  './',
-  './index.html',
-  './manifest.json',
+  '/',
+  '/static/index.html',
+  '/static/manifest.json',
+  '/static/icon-192.png',
+  '/static/icon-512.png',
+
   'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js',
   'https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js',
   'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js'

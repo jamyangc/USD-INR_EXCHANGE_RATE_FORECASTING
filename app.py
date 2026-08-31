@@ -425,8 +425,6 @@ def run_forecast_pipeline():
 
     # ========================================================
     # TRAIN RIDGE / DECISION TREE / MLP
-    # (Ridge and MLP use standardized features;
-    #  the tree is trained on raw features.)
     # ========================================================
 
     feature_scaler = StandardScaler()
@@ -523,8 +521,6 @@ def run_forecast_pipeline():
 
     # ========================================================
     # MLP FORECAST
-    # (clipped to a plausible daily log-return range so a
-    # bad-fit MLP run can't blow up into an absurd price)
     # ========================================================
 
     predicted_logret_mlp = mlp_model.predict(
@@ -774,8 +770,27 @@ CORS(app)
 def index():
 
     return send_from_directory(
-        "static",
+        app.static_folder,
         "index.html"
+    )
+
+
+# ============================================================
+# SERVICE WORKER
+# IMPORTANT:
+# The service worker is physically inside /static,
+# but this route exposes it at the root:
+# /service-worker.js
+# This gives it control over the whole dashboard.
+# ============================================================
+
+@app.route("/service-worker.js")
+def service_worker():
+
+    return send_from_directory(
+        app.static_folder,
+        "service-worker.js",
+        mimetype="application/javascript"
     )
 
 
@@ -877,9 +892,7 @@ def refresh():
 # ============================================================
 # CRON-FRIENDLY REFRESH (GET)
 # Some free cron services (e.g. cron-job.org) only send GET
-# requests. This is a GET-accessible alias of /api/refresh so
-# those services can trigger the pipeline without needing a
-# POST option.
+# requests. This is a GET-accessible alias of /api/refresh.
 # ============================================================
 
 @app.route(
