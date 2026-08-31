@@ -785,108 +785,145 @@
 
         async function loadDashboard() {
 
+    try {
+
+        const results = await Promise.all([
+            fetch("/api/predict", { cache: "no-store" }),
+            fetch("/api/history", { cache: "no-store" })
+        ]);
+
+        const predictRes = results[0];
+        const historyRes = results[1];
+
+        if (!predictRes.ok) {
+            throw new Error("Forecast API failed");
+        }
+
+        const data = await predictRes.json();
+
+        let history = [];
+
+        if (historyRes.ok) {
+            history = await historyRes.json();
+        }
+
+        // Save successful forecast data in the browser.
+        // This becomes our offline backup.
+        localStorage.setItem(
+            "usdinr_forecast_data",
+            JSON.stringify(data)
+        );
+
+        localStorage.setItem(
+            "usdinr_history_data",
+            JSON.stringify(history)
+        );
+
+        // Display fresh data
+        render(data, history);
+
+        if (syncStatus) {
+            syncStatus.textContent =
+                navigator.onLine
+                    ? "· live"
+                    : "· offline (saved data)";
+        }
+
+    }
+
+    catch (error) {
+
+        console.warn(
+            "Online forecast unavailable. Trying saved browser data.",
+            error
+        );
+
+        // =====================================================
+        // USE SAVED BROWSER DATA
+        // =====================================================
+
+        const savedData =
+            localStorage.getItem(
+                "usdinr_forecast_data"
+            );
+
+        const savedHistory =
+            localStorage.getItem(
+                "usdinr_history_data"
+            );
+
+        if (savedData) {
+
             try {
 
-                const results =
-                    await Promise.all([
-
-                        fetch("/api/predict"),
-
-                        fetch("/api/history")
-
-                    ]);
-
-
-                const predictRes =
-                    results[0];
-
-                const historyRes =
-                    results[1];
-
-
-                if (!predictRes.ok) {
-
-                    throw new Error(
-                        "Forecast API failed"
-                    );
-
-                }
-
-
                 const data =
-                    await predictRes.json();
+                    JSON.parse(savedData);
 
+                const history =
+                    savedHistory
+                        ? JSON.parse(savedHistory)
+                        : [];
 
-                let history = [];
-
-
-                if (historyRes.ok) {
-
-                    history =
-                        await historyRes.json();
-
-                }
-
-
-                render(
-                    data,
-                    history
-                );
-
+                render(data, history);
 
                 if (syncStatus) {
-
                     syncStatus.textContent =
-                        navigator.onLine
-                            ? "· live"
-                            : "· offline (last saved data)";
-
+                        "· offline (last saved data)";
                 }
+
+                return;
 
             }
 
-            catch (error) {
+            catch (storageError) {
 
                 console.error(
-                    "Dashboard error:",
-                    error
+                    "Saved browser data is corrupted:",
+                    storageError
                 );
-
-
-                content.className =
-                    "error";
-
-
-                content.innerHTML = `
-
-                    <strong>
-                        Could not load today's forecast.
-                    </strong>
-
-                    <br><br>
-
-                    Please check that Flask is running
-                    and that /api/predict is working.
-
-                    <br><br>
-
-                    <small>
-                        ${error.message}
-                    </small>
-
-                `;
-
-
-                if (syncStatus) {
-
-                    syncStatus.textContent =
-                        "· offline (no cached data yet)";
-
-                }
 
             }
 
         }
+
+        // =====================================================
+        // NO INTERNET + NO SAVED DATA
+        // =====================================================
+
+        console.error(
+            "Dashboard error:",
+            error
+        );
+
+        content.className = "error";
+
+        content.innerHTML = `
+
+            <strong>
+                Could not load today's forecast.
+            </strong>
+
+            <br><br>
+
+            Please connect to the internet once
+            so the latest forecast can be saved.
+
+            <br><br>
+
+            <small>
+                ${error.message}
+            </small>
+
+        `;
+
+        if (syncStatus) {
+            syncStatus.textContent =
+                "· offline (no saved data yet)";
+        }
+
+    }
+
+}
 
 
         /* =========================================================
