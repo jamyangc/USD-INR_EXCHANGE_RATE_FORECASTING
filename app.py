@@ -1,5 +1,5 @@
 # ============================================================
-# USD/INR FORECAST DASHBOARD - FLASK BACKEND
+# FX FORECAST DASHBOARD - FLASK BACKEND (MULTI-PAIR)
 # ============================================================
 
 import warnings
@@ -20,7 +20,7 @@ from sklearn.tree import DecisionTreeRegressor
 from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
 
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, send_from_directory, request
 from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -30,7 +30,6 @@ from apscheduler.schedulers.background import BackgroundScheduler
 # ============================================================
 
 RANDOM_STATE = 42
-TICKER = "USDINR=X"
 START_DATE = "2020-01-01"
 PPP_BASE_YEAR = 2020
 MIN_TRAIN_DAYS = 500
@@ -40,16 +39,6 @@ DAYS_IN_YEAR = 365
 MLP_LOGRET_CLIP = 0.02
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-FORECAST_FILE = os.path.join(
-    BASE_DIR,
-    "latest_forecast.json"
-)
-
-HISTORY_FILE = os.path.join(
-    BASE_DIR,
-    "history.json"
-)
 
 FEATURE_COLS = [
     "ret_1",
@@ -63,6 +52,113 @@ FEATURE_COLS = [
     "ma_ratio",
     "rsi_14"
 ]
+
+DEFAULT_PAIR = "USDINR"
+
+
+# ============================================================
+# PAIR DEFINITIONS
+#
+# "base" / "quote" follow FX convention: the price is
+# quote-currency-per-1-unit-of-base-currency, matching the
+# Yahoo Finance ticker (BASEQUOTE=X).
+#
+# wb_base / wb_quote are World Bank ISO3 country (or
+# aggregate) codes used to pull CPI (for PPP) and lending
+# rates (for IRP) for each side of the pair.
+# ============================================================
+
+PAIRS = {
+
+    "USDINR": {
+        "label": "USD/INR",
+        "ticker": "USDINR=X",
+        "base": "USD",
+        "quote": "INR",
+        "wb_base": "USA",
+        "wb_quote": "IND"
+    },
+
+    "USDJPY": {
+        "label": "USD/JPY",
+        "ticker": "USDJPY=X",
+        "base": "USD",
+        "quote": "JPY",
+        "wb_base": "USA",
+        "wb_quote": "JPN"
+    },
+
+    "USDCHF": {
+        "label": "USD/CHF",
+        "ticker": "USDCHF=X",
+        "base": "USD",
+        "quote": "CHF",
+        "wb_base": "USA",
+        "wb_quote": "CHE"
+    },
+
+    "USDCAD": {
+        "label": "USD/CAD",
+        "ticker": "USDCAD=X",
+        "base": "USD",
+        "quote": "CAD",
+        "wb_base": "USA",
+        "wb_quote": "CAN"
+    },
+
+    "EURUSD": {
+        "label": "EUR/USD",
+        "ticker": "EURUSD=X",
+        "base": "EUR",
+        "quote": "USD",
+        "wb_base": "EMU",
+        "wb_quote": "USA"
+    },
+
+    "GBPUSD": {
+        "label": "GBP/USD",
+        "ticker": "GBPUSD=X",
+        "base": "GBP",
+        "quote": "USD",
+        "wb_base": "GBR",
+        "wb_quote": "USA"
+    },
+
+    "AUDUSD": {
+        "label": "AUD/USD",
+        "ticker": "AUDUSD=X",
+        "base": "AUD",
+        "quote": "USD",
+        "wb_base": "AUS",
+        "wb_quote": "USA"
+    },
+
+    "NZDUSD": {
+        "label": "NZD/USD",
+        "ticker": "NZDUSD=X",
+        "base": "NZD",
+        "quote": "USD",
+        "wb_base": "NZL",
+        "wb_quote": "USA"
+    }
+
+}
+
+
+def forecast_file_path(pair_key):
+
+    return os.path.join(
+        BASE_DIR,
+        f"latest_forecast_{pair_key}.json"
+    )
+
+
+def history_file_path(pair_key):
+
+    return os.path.join(
+        BASE_DIR,
+        f"history_{pair_key}.json"
+    )
 
 
 # ============================================================
@@ -118,10 +214,10 @@ def build_features(df):
 
     df = df.copy()
 
-    df["ret_1"] = df["usdinr"].pct_change(1)
-    df["ret_5"] = df["usdinr"].pct_change(5)
-    df["ret_10"] = df["usdinr"].pct_change(10)
-    df["ret_20"] = df["usdinr"].pct_change(20)
+    df["ret_1"] = df["price"].pct_change(1)
+    df["ret_5"] = df["price"].pct_change(5)
+    df["ret_10"] = df["price"].pct_change(10)
+    df["ret_20"] = df["price"].pct_change(20)
 
     df["vol_5"] = (
         df["ret_1"]
@@ -136,29 +232,29 @@ def build_features(df):
     )
 
     df["ma_5"] = (
-        df["usdinr"]
+        df["price"]
         .rolling(5)
         .mean()
     )
 
     df["ma_20"] = (
-        df["usdinr"]
+        df["price"]
         .rolling(20)
         .mean()
     )
 
     df["ma_50"] = (
-        df["usdinr"]
+        df["price"]
         .rolling(50)
         .mean()
     )
 
     df["price_ma5_ratio"] = (
-        df["usdinr"] / df["ma_5"]
+        df["price"] / df["ma_5"]
     )
 
     df["price_ma20_ratio"] = (
-        df["usdinr"] / df["ma_20"]
+        df["price"] / df["ma_20"]
     )
 
     df["ma_ratio"] = (
@@ -166,7 +262,7 @@ def build_features(df):
     )
 
     # RSI(14)
-    delta = df["usdinr"].diff()
+    delta = df["price"].diff()
 
     gain = (
         delta.clip(lower=0)
@@ -188,15 +284,15 @@ def build_features(df):
 
     # One-day-ahead log return target
     df["target_logret"] = np.log(
-        df["usdinr"].shift(-HORIZON)
-        / df["usdinr"]
+        df["price"].shift(-HORIZON)
+        / df["price"]
     )
 
     return df
 
 
 # ============================================================
-# LIGHTGBM MODEL
+# MODEL FACTORIES
 # ============================================================
 
 def create_model():
@@ -214,10 +310,6 @@ def create_model():
     )
 
 
-# ============================================================
-# RIDGE MODEL
-# ============================================================
-
 def create_ridge_model():
 
     return Ridge(
@@ -225,10 +317,6 @@ def create_ridge_model():
         random_state=RANDOM_STATE
     )
 
-
-# ============================================================
-# DECISION TREE MODEL
-# ============================================================
 
 def create_tree_model():
 
@@ -238,10 +326,6 @@ def create_tree_model():
         random_state=RANDOM_STATE
     )
 
-
-# ============================================================
-# MLP MODEL
-# ============================================================
 
 def create_mlp_model():
 
@@ -254,10 +338,6 @@ def create_mlp_model():
         random_state=RANDOM_STATE
     )
 
-
-# ============================================================
-# CLIP MLP LOG RETURN
-# ============================================================
 
 def clip_logret(
     value,
@@ -275,22 +355,33 @@ def clip_logret(
 
 # ============================================================
 # MAIN FORECAST PIPELINE
-# RUNS ONCE PER TRADING DAY
+# Runs once per trading day, per currency pair.
 # ============================================================
 
-def run_forecast_pipeline():
+def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
+
+    if pair_key not in PAIRS:
+        raise ValueError(f"Unknown pair: {pair_key}")
+
+    cfg = PAIRS[pair_key]
+
+    ticker = cfg["ticker"]
+    base_ccy = cfg["base"]
+    quote_ccy = cfg["quote"]
+    wb_base = cfg["wb_base"]
+    wb_quote = cfg["wb_quote"]
 
     print(
         f"[{datetime.now()}] "
-        "Running daily forecast pipeline..."
+        f"Running daily forecast pipeline for {pair_key}..."
     )
 
     # ========================================================
-    # USD/INR DAILY DATA
+    # DAILY PRICE DATA
     # ========================================================
 
     fx = yf.download(
-        TICKER,
+        ticker,
         period="10y",
         interval="1d",
         auto_adjust=False,
@@ -299,21 +390,19 @@ def run_forecast_pipeline():
 
     if fx.empty:
         raise RuntimeError(
-            "Could not download USD/INR data from Yahoo Finance."
+            f"Could not download {pair_key} data from Yahoo Finance."
         )
 
     # Handle MultiIndex columns returned by newer yfinance versions
     if isinstance(fx.columns, pd.MultiIndex):
         fx.columns = fx.columns.get_level_values(0)
 
-    # Reset index
     fx = fx.reset_index()
 
-    # Rename columns
     fx = fx.rename(
         columns={
             "Date": "date",
-            "Close": "usdinr"
+            "Close": "price"
         }
     )
 
@@ -322,13 +411,13 @@ def run_forecast_pipeline():
             "Yahoo Finance data does not contain a Date column."
         )
 
-    if "usdinr" not in fx.columns:
+    if "price" not in fx.columns:
         raise RuntimeError(
             "Yahoo Finance data does not contain a Close column."
         )
 
     df = fx[
-        ["date", "usdinr"]
+        ["date", "price"]
     ].copy()
 
     df["date"] = pd.to_datetime(
@@ -336,8 +425,8 @@ def run_forecast_pipeline():
         errors="coerce"
     )
 
-    df["usdinr"] = pd.to_numeric(
-        df["usdinr"],
+    df["price"] = pd.to_numeric(
+        df["price"],
         errors="coerce"
     )
 
@@ -356,12 +445,12 @@ def run_forecast_pipeline():
 
     if df.empty:
         raise RuntimeError(
-            "No USD/INR observations available from 2020 onward."
+            f"No {pair_key} observations available from 2020 onward."
         )
 
     if len(df) < MIN_TRAIN_DAYS:
         raise RuntimeError(
-            f"Not enough USD/INR observations. "
+            f"Not enough {pair_key} observations. "
             f"Required: {MIN_TRAIN_DAYS}, "
             f"available: {len(df)}."
         )
@@ -372,46 +461,48 @@ def run_forecast_pipeline():
 
     # ========================================================
     # PPP
+    # (price = quote-per-base, so relative PPP moves the
+    # base-year price by the quote/base CPI ratio)
     # ========================================================
 
-    india_cpi = (
+    quote_cpi = (
         get_world_bank_indicator(
-            "IND",
+            wb_quote,
             "FP.CPI.TOTL"
         )
         .rename(
             columns={
-                "value": "india_cpi"
+                "value": "quote_cpi"
             }
         )
     )
 
-    usa_cpi = (
+    base_cpi = (
         get_world_bank_indicator(
-            "USA",
+            wb_base,
             "FP.CPI.TOTL"
         )
         .rename(
             columns={
-                "value": "usa_cpi"
+                "value": "base_cpi"
             }
         )
     )
 
     cpi = pd.merge(
-        india_cpi,
-        usa_cpi,
+        quote_cpi,
+        base_cpi,
         on="year",
         how="inner"
     )
 
     annual_fx = (
-        df.groupby("year")["usdinr"]
+        df.groupby("year")["price"]
         .mean()
         .reset_index()
         .rename(
             columns={
-                "usdinr": "average_usdinr"
+                "price": "average_price"
             }
         )
     )
@@ -432,19 +523,19 @@ def run_forecast_pipeline():
         ppp_data["year"] == PPP_BASE_YEAR
     ].iloc[0]
 
-    base_fx = base_row["average_usdinr"]
-    base_india_cpi = base_row["india_cpi"]
-    base_usa_cpi = base_row["usa_cpi"]
+    base_price = base_row["average_price"]
+    base_quote_cpi = base_row["quote_cpi"]
+    base_base_cpi = base_row["base_cpi"]
 
     ppp_data["ppp_rate"] = (
-        base_fx
+        base_price
         * (
-            ppp_data["india_cpi"]
-            / base_india_cpi
+            ppp_data["quote_cpi"]
+            / base_quote_cpi
         )
         / (
-            ppp_data["usa_cpi"]
-            / base_usa_cpi
+            ppp_data["base_cpi"]
+            / base_base_cpi
         )
     )
 
@@ -452,43 +543,43 @@ def run_forecast_pipeline():
     # IRP
     # ========================================================
 
-    india_rate = (
+    quote_rate = (
         get_world_bank_indicator(
-            "IND",
+            wb_quote,
             "FR.INR.LEND"
         )
         .rename(
             columns={
-                "value": "india_rate"
+                "value": "quote_rate"
             }
         )
     )
 
-    usa_rate = (
+    base_rate = (
         get_world_bank_indicator(
-            "USA",
+            wb_base,
             "FR.INR.LEND"
         )
         .rename(
             columns={
-                "value": "usa_rate"
+                "value": "base_rate"
             }
         )
     )
 
     rates = pd.merge(
-        india_rate,
-        usa_rate,
+        quote_rate,
+        base_rate,
         on="year",
         how="inner"
     )
 
-    rates["india_rate_decimal"] = (
-        rates["india_rate"] / 100
+    rates["quote_rate_decimal"] = (
+        rates["quote_rate"] / 100
     )
 
-    rates["usa_rate_decimal"] = (
-        rates["usa_rate"] / 100
+    rates["base_rate_decimal"] = (
+        rates["base_rate"] / 100
     )
 
     # ========================================================
@@ -507,7 +598,7 @@ def run_forecast_pipeline():
         )
 
     # ========================================================
-    # TRAIN LIGHTGBM
+    # TRAIN MODELS
     # ========================================================
 
     model = create_model()
@@ -517,10 +608,6 @@ def run_forecast_pipeline():
         train_df["target_logret"]
     )
 
-    # ========================================================
-    # TRAIN RIDGE / DECISION TREE / MLP
-    # ========================================================
-
     feature_scaler = StandardScaler()
 
     train_features_scaled = (
@@ -529,7 +616,6 @@ def run_forecast_pipeline():
         )
     )
 
-    # Ridge
     ridge_model = create_ridge_model()
 
     ridge_model.fit(
@@ -537,7 +623,6 @@ def run_forecast_pipeline():
         train_df["target_logret"]
     )
 
-    # Decision Tree
     tree_model = create_tree_model()
 
     tree_model.fit(
@@ -545,7 +630,6 @@ def run_forecast_pipeline():
         train_df["target_logret"]
     )
 
-    # MLP
     mlp_model = create_mlp_model()
 
     mlp_model.fit(
@@ -560,7 +644,7 @@ def run_forecast_pipeline():
     last_known_date = df["date"].iloc[-1]
 
     last_known_price = float(
-        df["usdinr"].iloc[-1]
+        df["price"].iloc[-1]
     )
 
     latest_features = (
@@ -579,7 +663,7 @@ def run_forecast_pipeline():
     )
 
     # ========================================================
-    # LIGHTGBM FORECAST
+    # FORECASTS
     # ========================================================
 
     predicted_logret = model.predict(
@@ -590,10 +674,6 @@ def run_forecast_pipeline():
         last_known_price
         * np.exp(predicted_logret)
     )
-
-    # ========================================================
-    # RIDGE FORECAST
-    # ========================================================
 
     predicted_logret_ridge = (
         ridge_model.predict(
@@ -606,10 +686,6 @@ def run_forecast_pipeline():
         * np.exp(predicted_logret_ridge)
     )
 
-    # ========================================================
-    # DECISION TREE FORECAST
-    # ========================================================
-
     predicted_logret_tree = (
         tree_model.predict(
             latest_features
@@ -620,10 +696,6 @@ def run_forecast_pipeline():
         last_known_price
         * np.exp(predicted_logret_tree)
     )
-
-    # ========================================================
-    # MLP FORECAST
-    # ========================================================
 
     predicted_logret_mlp = (
         mlp_model.predict(
@@ -640,10 +712,6 @@ def run_forecast_pipeline():
         * np.exp(predicted_logret_mlp)
     )
 
-    # ========================================================
-    # PPP FORECAST
-    # ========================================================
-
     latest_ppp_row = (
         ppp_data
         .dropna(subset=["ppp_rate"])
@@ -659,28 +727,24 @@ def run_forecast_pipeline():
         latest_ppp_row["year"]
     )
 
-    # ========================================================
-    # IRP FORECAST
-    # ========================================================
-
     latest_rate_row = (
         rates
         .dropna(
             subset=[
-                "india_rate_decimal",
-                "usa_rate_decimal"
+                "quote_rate_decimal",
+                "base_rate_decimal"
             ]
         )
         .sort_values("year")
         .iloc[-1]
     )
 
-    latest_india_rate = float(
-        latest_rate_row["india_rate_decimal"]
+    latest_quote_rate = float(
+        latest_rate_row["quote_rate_decimal"]
     )
 
-    latest_usa_rate = float(
-        latest_rate_row["usa_rate_decimal"]
+    latest_base_rate = float(
+        latest_rate_row["base_rate_decimal"]
     )
 
     latest_rate_year = int(
@@ -690,29 +754,17 @@ def run_forecast_pipeline():
     forecast_irp = (
         last_known_price
         * (
-            (1 + latest_india_rate)
-            / (1 + latest_usa_rate)
+            (1 + latest_quote_rate)
+            / (1 + latest_base_rate)
         ) ** (1 / DAYS_IN_YEAR)
     )
 
-    # ========================================================
-    # RANDOM WALK
-    # ========================================================
-
     forecast_rw = last_known_price
-
-    # ========================================================
-    # TOMORROW'S BUSINESS DAY
-    # ========================================================
 
     forecast_date = (
         last_known_date
         + pd.tseries.offsets.BDay(1)
     )
-
-    # ========================================================
-    # LIGHTGBM DIRECTION
-    # ========================================================
 
     if forecast_lgbm > last_known_price:
 
@@ -738,10 +790,18 @@ def run_forecast_pipeline():
 
     result = {
 
+        "pair": pair_key,
+
+        "pair_label": cfg["label"],
+
+        "base_ccy": base_ccy,
+
+        "quote_ccy": quote_ccy,
+
         "latest_available_date":
             last_known_date.strftime("%Y-%m-%d"),
 
-        "latest_usdinr":
+        "latest_price":
             round(last_known_price, 4),
 
         "forecast_date":
@@ -785,12 +845,8 @@ def run_forecast_pipeline():
 
     }
 
-    # ========================================================
-    # SAVE FORECAST
-    # ========================================================
-
     with open(
-        FORECAST_FILE,
+        forecast_file_path(pair_key),
         "w",
         encoding="utf-8"
     ) as f:
@@ -806,7 +862,7 @@ def run_forecast_pipeline():
     # ========================================================
 
     recent = (
-        df[["date", "usdinr"]]
+        df[["date", "price"]]
         .tail(60)
         .copy()
     )
@@ -821,7 +877,7 @@ def run_forecast_pipeline():
     )
 
     with open(
-        HISTORY_FILE,
+        history_file_path(pair_key),
         "w",
         encoding="utf-8"
     ) as f:
@@ -832,13 +888,9 @@ def run_forecast_pipeline():
             indent=2
         )
 
-    # ========================================================
-    # LOG
-    # ========================================================
-
     print(
         f"[{datetime.now()}] "
-        f"Forecast completed. "
+        f"Forecast completed for {pair_key}. "
         f"LightGBM -> "
         f"{forecast_lgbm:.4f} "
         f"({direction}) | "
@@ -848,6 +900,30 @@ def run_forecast_pipeline():
     )
 
     return result
+
+
+def run_all_pairs():
+
+    results = {}
+
+    errors = {}
+
+    for pair_key in PAIRS:
+
+        try:
+
+            results[pair_key] = run_forecast_pipeline(pair_key)
+
+        except Exception as e:
+
+            print(
+                f"[{datetime.now()}] "
+                f"Pipeline failed for {pair_key}: {e}"
+            )
+
+            errors[pair_key] = str(e)
+
+    return results, errors
 
 
 # ============================================================
@@ -862,10 +938,6 @@ app = Flask(
 CORS(app)
 
 
-# ============================================================
-# HOME PAGE
-# ============================================================
-
 @app.route("/")
 def index():
 
@@ -874,11 +946,6 @@ def index():
         "index.html"
     )
 
-
-# ============================================================
-# SERVICE WORKER
-# Expose /service-worker.js from the root.
-# ============================================================
 
 @app.route("/service-worker.js")
 def service_worker():
@@ -891,17 +958,57 @@ def service_worker():
 
 
 # ============================================================
+# PAIRS API
+# Lets the frontend build a currency-pair selector without
+# hardcoding the list.
+# ============================================================
+
+@app.route("/api/pairs")
+def pairs():
+
+    return jsonify([
+        {
+            "key": key,
+            "label": cfg["label"],
+            "base": cfg["base"],
+            "quote": cfg["quote"]
+        }
+        for key, cfg in PAIRS.items()
+    ])
+
+
+def _resolve_pair_arg():
+
+    pair_key = request.args.get("pair", DEFAULT_PAIR).upper()
+
+    if pair_key not in PAIRS:
+        return None
+
+    return pair_key
+
+
+# ============================================================
 # FORECAST API
 # ============================================================
 
 @app.route("/api/predict")
 def predict():
 
-    if not os.path.exists(FORECAST_FILE):
+    pair_key = _resolve_pair_arg()
+
+    if pair_key is None:
+
+        return jsonify({
+            "error": f"Unknown pair '{request.args.get('pair')}'"
+        }), 400
+
+    path = forecast_file_path(pair_key)
+
+    if not os.path.exists(path):
 
         try:
 
-            run_forecast_pipeline()
+            run_forecast_pipeline(pair_key)
 
         except Exception as e:
 
@@ -912,7 +1019,7 @@ def predict():
     try:
 
         with open(
-            FORECAST_FILE,
+            path,
             encoding="utf-8"
         ) as f:
 
@@ -934,11 +1041,21 @@ def predict():
 @app.route("/api/history")
 def history():
 
-    if not os.path.exists(HISTORY_FILE):
+    pair_key = _resolve_pair_arg()
+
+    if pair_key is None:
+
+        return jsonify({
+            "error": f"Unknown pair '{request.args.get('pair')}'"
+        }), 400
+
+    path = history_file_path(pair_key)
+
+    if not os.path.exists(path):
 
         try:
 
-            run_forecast_pipeline()
+            run_forecast_pipeline(pair_key)
 
         except Exception as e:
 
@@ -949,7 +1066,7 @@ def history():
     try:
 
         with open(
-            HISTORY_FILE,
+            path,
             encoding="utf-8"
         ) as f:
 
@@ -966,6 +1083,7 @@ def history():
 
 # ============================================================
 # MANUAL REFRESH API
+# With no ?pair=, refreshes every configured pair.
 # ============================================================
 
 @app.route(
@@ -974,22 +1092,41 @@ def history():
 )
 def refresh():
 
-    try:
+    requested_pair = request.args.get("pair")
 
-        result = run_forecast_pipeline()
+    if requested_pair:
 
-        return jsonify(result)
+        pair_key = _resolve_pair_arg()
 
-    except Exception as e:
+        if pair_key is None:
 
-        return jsonify({
-            "error": str(e)
-        }), 500
+            return jsonify({
+                "error": f"Unknown pair '{requested_pair}'"
+            }), 400
+
+        try:
+
+            result = run_forecast_pipeline(pair_key)
+
+            return jsonify(result)
+
+        except Exception as e:
+
+            return jsonify({
+                "error": str(e)
+            }), 500
+
+    results, errors = run_all_pairs()
+
+    return jsonify({
+        "results": results,
+        "errors": errors
+    })
 
 
 # ============================================================
 # CRON-FRIENDLY REFRESH
-# Supports GET and POST.
+# Always refreshes every configured pair.
 # ============================================================
 
 @app.route(
@@ -998,17 +1135,12 @@ def refresh():
 )
 def refresh_cron():
 
-    try:
+    results, errors = run_all_pairs()
 
-        result = run_forecast_pipeline()
-
-        return jsonify(result)
-
-    except Exception as e:
-
-        return jsonify({
-            "error": str(e)
-        }), 500
+    return jsonify({
+        "results": results,
+        "errors": errors
+    })
 
 
 # ============================================================
@@ -1032,7 +1164,7 @@ if os.environ.get(
     )
 
     scheduler.add_job(
-        run_forecast_pipeline,
+        run_all_pairs,
         "cron",
         day_of_week="mon-fri",
         hour=18,
@@ -1054,23 +1186,24 @@ if os.environ.get(
 
 if __name__ == "__main__":
 
-    # Run once when starting the application
-    # if no forecast exists yet.
+    # Run once per pair at startup if no forecast exists yet.
 
-    if not os.path.exists(
-        FORECAST_FILE
-    ):
+    for pair_key in PAIRS:
 
-        try:
+        if not os.path.exists(
+            forecast_file_path(pair_key)
+        ):
 
-            run_forecast_pipeline()
+            try:
 
-        except Exception as e:
+                run_forecast_pipeline(pair_key)
 
-            print(
-                "Startup pipeline run failed:",
-                e
-            )
+            except Exception as e:
+
+                print(
+                    f"Startup pipeline run failed for {pair_key}:",
+                    e
+                )
 
     port = int(
         os.environ.get(
