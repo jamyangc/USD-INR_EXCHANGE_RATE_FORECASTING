@@ -13,7 +13,7 @@
     ========================================================== -->
 
     <link rel="manifest" href="/static/manifest.json">
-    <meta name="theme-color" content="#0f172a">
+    <meta name="theme-color" content="#f6f4ee">
 
     <!-- iOS PWA -->
     <link rel="apple-touch-icon" href="/static/icon-192.png">
@@ -55,6 +55,7 @@
             --paper: #f6f4ee;
             --line: #d8d2c2;
             --brass: #a9822f;
+            --brass-soft: #f3ead6;
 
             --up: #2f6d4f;
             --down: #a1372f;
@@ -62,6 +63,8 @@
             --muted: #6b6a5f;
 
             --panel: #ffffff;
+
+            --shadow: 0 1px 2px rgba(26,35,50,0.04), 0 4px 14px rgba(26,35,50,0.05);
         }
 
 
@@ -254,9 +257,7 @@
 
             grid-template-columns: repeat(4, 1fr);
 
-            gap: 1px;
-
-            background: var(--line);
+            gap: 12px;
 
             margin-top: 32px;
         }
@@ -264,7 +265,19 @@
         .panel {
             background: var(--panel);
 
-            padding: 24px 20px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+
+            padding: 22px 20px;
+
+            box-shadow: var(--shadow);
+
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .panel:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 2px 4px rgba(26,35,50,0.06), 0 10px 22px rgba(26,35,50,0.08);
         }
 
         .panel .label {
@@ -287,6 +300,8 @@
             font-weight: 700;
 
             margin: 0 0 4px;
+
+            font-variant-numeric: tabular-nums;
         }
 
         .panel .note {
@@ -297,49 +312,7 @@
             margin: 0;
         }
 
-        .panel.hero-model {
-            background: var(--ink);
-
-            color: var(--paper);
-        }
-
-        .panel.hero-model .label,
-        .panel.hero-model .note {
-            color: #b9c2cf;
-        }
-
-
-        /* =========================================================
-           EXPLANATION
-        ========================================================== */
-
-        .explain {
-            margin-top: 56px;
-
-            padding-top: 32px;
-
-            border-top: 1px solid var(--line);
-        }
-
-        .explain h2 {
-            font-size: 1.1rem;
-
-            margin: 0 0 16px;
-        }
-
-        .explain p {
-            color: #3d4757;
-
-            line-height: 1.65;
-
-            font-size: 0.98rem;
-
-            max-width: 75ch;
-        }
-
-        .explain p + p {
-            margin-top: 12px;
-        }
+        /* Hero (LightGBM) panel now styled the same as the other panels. */
 
 
         /* =========================================================
@@ -396,6 +369,8 @@
 
             padding: 8px 14px;
 
+            border-radius: 5px;
+
             font-family: 'Courier New', monospace;
 
             font-size: 11px;
@@ -407,6 +382,8 @@
 
         .chart-btn:hover {
             background: var(--ink);
+
+            border-color: var(--ink);
 
             color: white;
         }
@@ -430,6 +407,9 @@
             background: #ffffff;
 
             border: 1px solid var(--line);
+            border-radius: 8px;
+
+            box-shadow: var(--shadow);
 
             padding: 15px;
         }
@@ -1171,48 +1151,6 @@
 
                     </div>
 
-
-                </div>
-
-
-                <!-- =================================================
-                     EXPLANATION
-                ================================================== -->
-
-                <div class="explain">
-
-                    <h2>
-                        What am I looking at?
-                    </h2>
-
-
-                    <p>
-
-                        The big number is tomorrow's expected
-                        USD/INR exchange rate produced by the
-                        LightGBM machine-learning model.
-
-                        The model learns from recent price
-                        momentum, volatility, moving averages
-                        and RSI.
-
-                    </p>
-
-
-                    <p>
-
-                        The benchmark models provide alternative
-                        estimates. Random Walk assumes that
-                        tomorrow's exchange rate will equal today's
-                        rate. PPP uses relative inflation, while
-                        IRP uses the difference between Indian and
-                        US interest rates. Ridge, Decision Tree and
-                        MLP are three additional machine-learning
-                        models trained on the same recent price
-                        data as LightGBM, each learning the
-                        relationship differently.
-
-                    </p>
 
                 </div>
 
