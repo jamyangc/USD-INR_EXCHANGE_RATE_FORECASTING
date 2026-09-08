@@ -2,7 +2,8 @@
 // USD/INR FORECAST DASHBOARD - SERVICE WORKER
 // ============================================================
 
-const CACHE_NAME = "usdinr-forecast-cache-v5";
+const CACHE_NAME = "fx-dashboard-v6";
+
 
 // ============================================================
 // APP SHELL
@@ -23,15 +24,6 @@ const APP_SHELL = [
 
     // Chart.js Zoom Plugin
     "https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"
-];
-
-
-// ============================================================
-// CDN HOSTS
-// ============================================================
-
-const CACHE_FIRST_HOSTS = [
-    "cdn.jsdelivr.net"
 ];
 
 
@@ -67,6 +59,7 @@ self.addEventListener("install", (event) => {
 
     );
 
+    // Activate the new service worker immediately
     self.skipWaiting();
 
 });
@@ -94,6 +87,7 @@ self.addEventListener("activate", (event) => {
 
     );
 
+    // Take control of open pages immediately
     self.clients.claim();
 
 });
@@ -106,20 +100,25 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
 
     const request = event.request;
-    const url = request.url;
+    const url = new URL(request.url);
 
 
     // ========================================================
     // API REQUESTS
     // ========================================================
     // Network first:
-    // Try to get the newest forecast.
-    // If offline, use the previously cached response.
+    //
+    // 1. Try the live API
+    // 2. Save successful response
+    // 3. If offline, return cached API response
+    //
+    // This applies to each currency pair separately because
+    // the query string is part of the cache key.
     // ========================================================
 
     if (
-        url.includes("/api/predict") ||
-        url.includes("/api/history")
+        url.pathname === "/api/predict" ||
+        url.pathname === "/api/history"
     ) {
 
         event.respondWith(
@@ -128,7 +127,6 @@ self.addEventListener("fetch", (event) => {
 
                 .then((response) => {
 
-                    // Only cache successful responses
                     if (response.ok) {
 
                         const responseClone =
@@ -164,19 +162,80 @@ self.addEventListener("fetch", (event) => {
 
 
     // ========================================================
+    // PAGE NAVIGATION
+    // ========================================================
+    // Network first when online.
+    //
+    // If internet is unavailable:
+    // return the cached dashboard.
+    // ========================================================
+
+    if (request.mode === "navigate") {
+
+        event.respondWith(
+
+            fetch(request)
+
+                .then((response) => {
+
+                    if (response.ok) {
+
+                        const responseClone =
+                            response.clone();
+
+                        caches.open(CACHE_NAME)
+                            .then((cache) => {
+
+                                cache.put(
+                                    "/",
+                                    responseClone
+                                );
+
+                            });
+
+                    }
+
+                    return response;
+
+                })
+
+                .catch(() => {
+
+                    return caches.match("/")
+                        .then((cachedPage) => {
+
+                            if (cachedPage) {
+                                return cachedPage;
+                            }
+
+                            return caches.match(
+                                "/static/index.html"
+                            );
+
+                        });
+
+                })
+
+        );
+
+        return;
+
+    }
+
+
+    // ========================================================
     // CDN FILES
     // ========================================================
     // Cache first:
-    // Chart.js, Hammer.js and the zoom plugin rarely change.
+    //
+    // Chart.js
+    // Hammer.js
+    // chartjs-plugin-zoom
+    //
+    // These are already included in APP_SHELL.
     // ========================================================
 
-    const isCacheFirstHost =
-        CACHE_FIRST_HOSTS.some(
-            (host) => url.includes(host)
-        );
-
-
-    if (isCacheFirstHost) {
+    if (url.hostname === "cdn.jsdelivr.net") {
 
         event.respondWith(
 
@@ -204,9 +263,13 @@ self.addEventListener("fetch", (event) => {
     // ========================================================
     // OTHER REQUESTS
     // ========================================================
-    // Network first:
-    // This keeps the dashboard updated when online.
-    // Cached version is used when offline.
+    // Network first.
+    //
+    // If online:
+    //     get the newest resource
+    //
+    // If offline:
+    //     use cached resource
     // ========================================================
 
     event.respondWith(
@@ -215,7 +278,6 @@ self.addEventListener("fetch", (event) => {
 
             .then((response) => {
 
-                // Cache only successful GET responses
                 if (
                     request.method === "GET" &&
                     response.ok
