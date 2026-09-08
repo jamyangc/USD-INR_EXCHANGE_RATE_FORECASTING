@@ -1,0 +1,21 @@
+{
+  "pair": "USDCAD",
+  "pair_label": "USD/CAD",
+  "base_ccy": "USD",
+  "quote_ccy": "CAD",
+  "latest_available_date": "2026-09-08",
+  "latest_price": 1.378,
+  "forecast_date": "2026-09-09",
+  "random_walk": 1.378,
+  "ppp": 1.2994,
+  "ppp_cpi_year": 2024,
+  "irp": 1.378,
+  "irp_rate_year": 2017,
+  "ridge": 1.3784,
+  "decision_tree": 1.378,
+  "mlp": 1.3787,
+  "lightgbm": 1.3782,
+  "lightgbm_change_percent": 0.0103,
+  "lightgbm_direction": "UP",
+  "generated_at": "2026-09-09T01:08:12.909603"
+}

@@ -1,0 +1,21 @@
+{
+  "pair": "USDINR",
+  "pair_label": "USD/INR",
+  "base_ccy": "USD",
+  "quote_ccy": "INR",
+  "latest_available_date": "2026-09-08",
+  "latest_price": 94.81,
+  "forecast_date": "2026-09-09",
+  "random_walk": 94.81,
+  "ppp": 76.1685,
+  "ppp_cpi_year": 2024,
+  "irp": 94.8234,
+  "irp_rate_year": 2021,
+  "ridge": 94.7772,
+  "decision_tree": 94.8227,
+  "mlp": 94.8218,
+  "lightgbm": 94.7958,
+  "lightgbm_change_percent": -0.015,
+  "lightgbm_direction": "DOWN",
+  "generated_at": "2026-09-09T01:08:00.636623"
+}

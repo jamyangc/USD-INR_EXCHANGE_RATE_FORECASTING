@@ -1,0 +1,21 @@
+{
+  "pair": "USDCHF",
+  "pair_label": "USD/CHF",
+  "base_ccy": "USD",
+  "quote_ccy": "CHF",
+  "latest_available_date": "2026-09-08",
+  "latest_price": 0.809,
+  "forecast_date": "2026-09-09",
+  "random_walk": 0.809,
+  "ppp": 0.8269,
+  "ppp_cpi_year": 2024,
+  "irp": 0.809,
+  "irp_rate_year": 2021,
+  "ridge": 0.8086,
+  "decision_tree": 0.8092,
+  "mlp": 0.8089,
+  "lightgbm": 0.8087,
+  "lightgbm_change_percent": -0.0407,
+  "lightgbm_direction": "DOWN",
+  "generated_at": "2026-09-09T01:08:09.427411"
+}

@@ -1,0 +1,21 @@
+{
+  "pair": "GBPUSD",
+  "pair_label": "GBP/USD",
+  "base_ccy": "GBP",
+  "quote_ccy": "USD",
+  "latest_available_date": "2026-09-08",
+  "latest_price": 1.3546,
+  "forecast_date": "2026-09-09",
+  "random_walk": 1.3546,
+  "ppp": 1.2754,
+  "ppp_cpi_year": 2024,
+  "irp": 1.3547,
+  "irp_rate_year": 2014,
+  "ridge": 1.3544,
+  "decision_tree": 1.3548,
+  "mlp": 1.3566,
+  "lightgbm": 1.3552,
+  "lightgbm_change_percent": 0.0438,
+  "lightgbm_direction": "UP",
+  "generated_at": "2026-09-09T01:08:19.278261"
+}

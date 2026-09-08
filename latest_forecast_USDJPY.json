@@ -1,0 +1,21 @@
+{
+  "pair": "USDJPY",
+  "pair_label": "USD/JPY",
+  "base_ccy": "USD",
+  "quote_ccy": "JPY",
+  "latest_available_date": "2026-09-08",
+  "latest_price": 153.811,
+  "forecast_date": "2026-09-09",
+  "random_walk": 153.811,
+  "ppp": 95.5692,
+  "ppp_cpi_year": 2024,
+  "irp": 153.7983,
+  "irp_rate_year": 2017,
+  "ridge": 153.745,
+  "decision_tree": 154.1687,
+  "mlp": 153.8984,
+  "lightgbm": 154.4209,
+  "lightgbm_change_percent": 0.3965,
+  "lightgbm_direction": "UP",
+  "generated_at": "2026-09-09T01:08:04.312473"
+}

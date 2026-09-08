@@ -1,0 +1,21 @@
+{
+  "pair": "NZDUSD",
+  "pair_label": "NZD/USD",
+  "base_ccy": "NZD",
+  "quote_ccy": "USD",
+  "latest_available_date": "2026-09-08",
+  "latest_price": 0.5861,
+  "forecast_date": "2026-09-09",
+  "random_walk": 0.5861,
+  "ppp": 0.6506,
+  "ppp_cpi_year": 2024,
+  "irp": 0.5861,
+  "irp_rate_year": 2017,
+  "ridge": 0.5859,
+  "decision_tree": 0.586,
+  "mlp": 0.586,
+  "lightgbm": 0.5865,
+  "lightgbm_change_percent": 0.0736,
+  "lightgbm_direction": "UP",
+  "generated_at": "2026-09-09T01:08:28.687928"
+}

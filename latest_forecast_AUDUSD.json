@@ -1,0 +1,21 @@
+{
+  "pair": "AUDUSD",
+  "pair_label": "AUD/USD",
+  "base_ccy": "AUD",
+  "quote_ccy": "USD",
+  "latest_available_date": "2026-09-08",
+  "latest_price": 0.7225,
+  "forecast_date": "2026-09-09",
+  "random_walk": 0.7225,
+  "ppp": 0.701,
+  "ppp_cpi_year": 2024,
+  "irp": 0.7225,
+  "irp_rate_year": 2019,
+  "ridge": 0.7223,
+  "decision_tree": 0.7226,
+  "mlp": 0.7227,
+  "lightgbm": 0.7228,
+  "lightgbm_change_percent": 0.0388,
+  "lightgbm_direction": "UP",
+  "generated_at": "2026-09-09T01:08:23.162983"
+}
