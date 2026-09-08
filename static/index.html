@@ -656,7 +656,14 @@
             </span>
         </h1>
 
-
+        <!-- FIX: this element was missing. JS looks it up via
+             getElementById("subCopy") and sets its textContent
+             on every render() call — without it, that line threw
+             "Cannot set properties of null". -->
+        <p
+            id="subCopy"
+            class="sub">
+        </p>
 
 
     </header>
@@ -1134,9 +1141,13 @@
             headline.textContent =
                 "Where does " + pairLabel + " land tomorrow?";
 
-            subCopy.textContent =
-                "A daily " + pairLabel + " forecast built for anyone — " +
-                "no spreadsheets, no code. 1 " + baseCcy + " = ? " + quoteCcy + ".";
+            if (subCopy) {
+
+                subCopy.textContent =
+                    "A daily " + pairLabel + " forecast built for anyone — " +
+                    "no spreadsheets, no code. 1 " + baseCcy + " = ? " + quoteCcy + ".";
+
+            }
 
             tickerTape.querySelector("span").textContent =
                 pairLabel + " FORECAST DASHBOARD";
