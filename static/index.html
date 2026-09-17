@@ -725,6 +725,9 @@
            GLOBAL
         ========================================================== */
 
+        // Render backend used by the Android app and web dashboard.
+        const API_BASE = "https://usd-inr-exchange-rate-forecasting.onrender.com";
+
         let fxChart = null;
 
         let currentPair = "USDINR";
@@ -929,7 +932,7 @@
             try {
 
                 const res = await fetch(
-                    "/api/pairs",
+                    `${API_BASE}/api/pairs`,
                     { cache: "no-store" }
                 );
 
@@ -1045,12 +1048,12 @@
                     const results = await Promise.all([
 
                         fetch(
-                            `/api/predict?pair=${p.key}`,
+                            `${API_BASE}/api/predict?pair=${p.key}`,
                             { cache: "no-store" }
                         ),
 
                         fetch(
-                            `/api/history?pair=${p.key}`,
+                            `${API_BASE}/api/history?pair=${p.key}`,
                             { cache: "no-store" }
                         )
 
@@ -1136,8 +1139,8 @@
     try {
 
         const results = await Promise.all([
-            fetch(`/api/predict?pair=${pair}`, { cache: "no-store" }),
-            fetch(`/api/history?pair=${pair}`, { cache: "no-store" })
+            fetch(`${API_BASE}/api/predict?pair=${pair}`, { cache: "no-store" }),
+            fetch(`${API_BASE}/api/history?pair=${pair}`, { cache: "no-store" })
         ]);
 
         const predictRes = results[0];
