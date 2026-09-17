@@ -837,6 +837,17 @@
 
         }
 
+        /* =========================================================
+           STORAGE KEY for the pair list itself.
+
+           Saved so that if /api/pairs can't be reached (device is
+           offline), the dropdown can still be rebuilt from the
+           last known list instead of collapsing down to a single
+           hardcoded pair.
+        ========================================================== */
+
+        const PAIRS_LIST_STORAGE_KEY = "fx_pairs_list";
+
 
         /* =========================================================
            DIRECTION PILL
@@ -879,9 +890,18 @@
 
         /* =========================================================
            LOAD PAIR LIST, THEN DASHBOARD
+
+           If the online fetch for the pair list fails, this now
+           falls back to whatever pair list was saved during the
+           last successful visit, rather than dropping straight to
+           a single hardcoded pair. That way, the dropdown still
+           lists every pair the user has previously seen even when
+           there is no network at all.
         ========================================================== */
 
         async function loadPairs() {
+
+            let fetchedOnline = false;
 
             try {
 
@@ -896,18 +916,53 @@
 
                 availablePairs = await res.json();
 
+                fetchedOnline = true;
+
+                localStorage.setItem(
+                    PAIRS_LIST_STORAGE_KEY,
+                    JSON.stringify(availablePairs)
+                );
+
             }
 
             catch (error) {
 
                 console.warn(
-                    "Falling back to a single pair.",
+                    "Pair list fetch failed, trying saved list.",
                     error
                 );
 
-                availablePairs = [
-                    { key: "USDINR", label: "USD/INR", base: "USD", quote: "INR" }
-                ];
+                const savedPairs =
+                    localStorage.getItem(PAIRS_LIST_STORAGE_KEY);
+
+                if (savedPairs) {
+
+                    try {
+
+                        availablePairs = JSON.parse(savedPairs);
+
+                    }
+
+                    catch (parseError) {
+
+                        console.error(
+                            "Saved pair list is corrupted:",
+                            parseError
+                        );
+
+                        availablePairs = [];
+
+                    }
+
+                }
+
+                if (!availablePairs || availablePairs.length === 0) {
+
+                    availablePairs = [
+                        { key: "USDINR", label: "USD/INR", base: "USD", quote: "INR" }
+                    ];
+
+                }
 
             }
 
@@ -930,6 +985,93 @@
             }
 
             loadDashboard();
+
+            /*
+             * While actually online, quietly download every pair's
+             * data in the background. This means switching pairs
+             * later — even with no internet — has something saved
+             * to fall back on, instead of only the one pair the
+             * user happened to be viewing when connectivity dropped.
+             */
+
+            if (fetchedOnline) {
+
+                prefetchAllPairs();
+
+            }
+
+        }
+
+
+        /* =========================================================
+           PREFETCH ALL PAIRS
+
+           Loops through every pair in availablePairs and stores
+           its forecast + history data in localStorage, namespaced
+           the same way loadDashboard() already saves data. This is
+           what actually makes "switch pairs while offline" possible
+           for pairs beyond whichever one was open at the time.
+        ========================================================== */
+
+        async function prefetchAllPairs() {
+
+            for (const p of availablePairs) {
+
+                try {
+
+                    const results = await Promise.all([
+
+                        fetch(
+                            `/api/predict?pair=${p.key}`,
+                            { cache: "no-store" }
+                        ),
+
+                        fetch(
+                            `/api/history?pair=${p.key}`,
+                            { cache: "no-store" }
+                        )
+
+                    ]);
+
+                    const predictRes = results[0];
+
+                    const historyRes = results[1];
+
+                    if (predictRes.ok) {
+
+                        const data = await predictRes.json();
+
+                        localStorage.setItem(
+                            forecastStorageKey(p.key),
+                            JSON.stringify(data)
+                        );
+
+                    }
+
+                    if (historyRes.ok) {
+
+                        const history = await historyRes.json();
+
+                        localStorage.setItem(
+                            historyStorageKey(p.key),
+                            JSON.stringify(history)
+                        );
+
+                    }
+
+                }
+
+                catch (error) {
+
+                    console.warn(
+                        "Prefetch failed for pair:",
+                        p.key,
+                        error
+                    );
+
+                }
+
+            }
 
         }
 
@@ -2262,6 +2404,14 @@
             function () {
 
                 loadDashboard();
+
+                /*
+                 * Connectivity just came back — refresh the
+                 * offline backups for every pair, not just the
+                 * one currently on screen.
+                 */
+
+                prefetchAllPairs();
 
             }
         );
