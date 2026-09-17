@@ -324,6 +324,23 @@
             margin-top: 32px;
         }
 
+        .benchmark-badge {
+            display: inline-block;
+            margin-left: 8px;
+            padding: 3px 7px;
+            border: 1px solid currentColor;
+            border-radius: 999px;
+            font-family: 'Courier New', monospace;
+            font-size: 9px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            vertical-align: middle;
+        }
+
+        .benchmark-panel {
+            border-style: dashed;
+        }
+
         .panel {
             background: var(--panel);
 
@@ -625,11 +642,10 @@
 
         <span>FX FORECAST DASHBOARD</span>
 
-        <span>MODEL: LIGHTGBM</span>
+        <span>PRIMARY MODELS: LIGHTGBM · RIDGE · DECISION TREE · MLP</span>
 
         <span>
-            BENCHMARKS:
-            RANDOM WALK · PPP · IRP · RIDGE ·
+            BENCHMARK: RANDOM WALK · OTHER MODELS: PPP · IRP · RIDGE ·
             DECISION TREE · MLP
         </span>
 
@@ -736,6 +752,7 @@
             {
                 key: "lightgbm",
                 label: "LightGBM",
+                role: "model",
                 color: "#a9822f",
                 width: 2.5
             },
@@ -743,6 +760,7 @@
             {
                 key: "random_walk",
                 label: "Random Walk",
+                role: "benchmark",
                 color: "#6b6a5f",
                 width: 1.5
             },
@@ -750,6 +768,7 @@
             {
                 key: "ppp",
                 label: "PPP",
+                role: "model",
                 color: "#2f6d9f",
                 width: 1.5
             },
@@ -757,6 +776,7 @@
             {
                 key: "irp",
                 label: "IRP",
+                role: "model",
                 color: "#7a4fa0",
                 width: 1.5
             },
@@ -764,6 +784,7 @@
             {
                 key: "ridge",
                 label: "Ridge",
+                role: "model",
                 color: "#2f6d4f",
                 width: 1.5
             },
@@ -771,6 +792,7 @@
             {
                 key: "decision_tree",
                 label: "Decision Tree",
+                role: "model",
                 color: "#a1372f",
                 width: 1.5
             },
@@ -778,6 +800,7 @@
             {
                 key: "mlp",
                 label: "MLP",
+                role: "model",
                 color: "#c26b1f",
                 width: 1.5
             }
@@ -1384,17 +1407,18 @@
 
                         <p class="note">
 
-                            Main machine-learning forecast
+                            Machine-learning model
 
                         </p>
 
                     </div>
 
 
-                    <div class="panel">
+                    <div class="panel benchmark-panel">
 
                         <p class="label">
                             Random Walk
+                            <span class="benchmark-badge">Benchmark</span>
                         </p>
 
                         <p class="value">
@@ -1405,7 +1429,7 @@
 
                         <p class="note">
 
-                            Tomorrow = latest price
+                            Benchmark · tomorrow = latest price
 
                         </p>
 
@@ -1426,7 +1450,7 @@
 
                         <p class="note">
 
-                            CPI-based benchmark
+                            Purchasing Power Parity model
                             (${data.ppp_cpi_year})
 
                         </p>
@@ -1448,7 +1472,7 @@
 
                         <p class="note">
 
-                            Interest-rate benchmark
+                            Interest Rate Parity model
                             (${data.irp_rate_year})
 
                         </p>
@@ -1594,6 +1618,10 @@
                         &nbsp; · &nbsp;
 
                         Hover = Exact price
+
+                        &nbsp; · &nbsp;
+
+                        Random Walk = benchmark
 
                         &nbsp; · &nbsp;
 
@@ -1802,7 +1830,9 @@
 
                                 label:
                                     model.label +
-                                    " forecast",
+                                    (model.role === "benchmark"
+                                        ? " benchmark"
+                                        : " forecast"),
 
                                 data:
                                     series,
