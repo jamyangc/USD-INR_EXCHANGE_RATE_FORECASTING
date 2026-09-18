@@ -1,6 +1,7 @@
 import warnings
 warnings.filterwarnings("ignore")
 
+import gc
 import json
 import os
 from datetime import datetime
@@ -339,16 +340,25 @@ def build_features(df):
 
 
 def create_model():
+    # n_jobs was -1 (use every CPU core). On a shared/limited host
+    # like Render's free tier, each thread carries its own working
+    # memory for tree-building, so more threads means more peak RAM
+    # for no real speed win at this data size -- n_jobs=1 trades a
+    # bit of wall-clock time for a much smaller memory footprint.
+    # n_estimators trimmed from 300 to 150 for the same reason: this
+    # model gets refit from scratch on every walk-forward backtest
+    # day (see historical_model_selection), so its per-fit cost is
+    # what actually matters for staying under the memory ceiling.
     return lgb.LGBMRegressor(
-        n_estimators=300,
+        n_estimators=150,
         max_depth=4,
-        learning_rate=0.03,
+        learning_rate=0.05,
         subsample=0.8,
         colsample_bytree=0.8,
         random_state=RANDOM_STATE,
         objective="regression",
         verbosity=-1,
-        n_jobs=-1
+        n_jobs=1
     )
 
 
@@ -808,6 +818,15 @@ def historical_model_selection(
             print(
                 f"Historical IRP error: {e}"
             )
+
+        # Explicit cleanup between backtest days. This loop creates
+        # a brand-new LightGBM/Ridge/Tree/MLP object on every single
+        # iteration; Python's garbage collector doesn't always keep
+        # up with that churn fast enough to stay under a tight
+        # memory ceiling (e.g. Render's free-tier 512MB), so we
+        # force a collection pass explicitly rather than letting
+        # objects pile up across all SELECTION_WINDOW iterations.
+        gc.collect()
 
     mae = {}
 
