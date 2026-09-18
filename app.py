@@ -1,13 +1,9 @@
-# ============================================================
-# FX FORECAST DASHBOARD - FLASK BACKEND (MULTI-PAIR)
-# ============================================================
-
 import warnings
 warnings.filterwarnings("ignore")
 
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -25,18 +21,15 @@ from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
 
 
-# ============================================================
-# SETTINGS
-# ============================================================
-
 RANDOM_STATE = 42
 START_DATE = "2020-01-01"
 PPP_BASE_YEAR = 2020
 MIN_TRAIN_DAYS = 500
 HORIZON = 1
 DAYS_IN_YEAR = 365
-
 MLP_LOGRET_CLIP = 0.02
+SELECTION_WINDOW = 30
+DEFAULT_PAIR = "USDINR"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -53,23 +46,7 @@ FEATURE_COLS = [
     "rsi_14"
 ]
 
-DEFAULT_PAIR = "USDINR"
-
-
-# ============================================================
-# PAIR DEFINITIONS
-#
-# "base" / "quote" follow FX convention: the price is
-# quote-currency-per-1-unit-of-base-currency, matching the
-# Yahoo Finance ticker (BASEQUOTE=X).
-#
-# wb_base / wb_quote are World Bank ISO3 country (or
-# aggregate) codes used to pull CPI (for PPP) and lending
-# rates (for IRP) for each side of the pair.
-# ============================================================
-
 PAIRS = {
-
     "USDINR": {
         "label": "USD/INR",
         "ticker": "USDINR=X",
@@ -78,7 +55,6 @@ PAIRS = {
         "wb_base": "USA",
         "wb_quote": "IND"
     },
-
     "USDJPY": {
         "label": "USD/JPY",
         "ticker": "USDJPY=X",
@@ -87,7 +63,6 @@ PAIRS = {
         "wb_base": "USA",
         "wb_quote": "JPN"
     },
-
     "USDCHF": {
         "label": "USD/CHF",
         "ticker": "USDCHF=X",
@@ -96,7 +71,6 @@ PAIRS = {
         "wb_base": "USA",
         "wb_quote": "CHE"
     },
-
     "USDCAD": {
         "label": "USD/CAD",
         "ticker": "USDCAD=X",
@@ -105,7 +79,6 @@ PAIRS = {
         "wb_base": "USA",
         "wb_quote": "CAN"
     },
-
     "EURUSD": {
         "label": "EUR/USD",
         "ticker": "EURUSD=X",
@@ -114,7 +87,6 @@ PAIRS = {
         "wb_base": "EMU",
         "wb_quote": "USA"
     },
-
     "GBPUSD": {
         "label": "GBP/USD",
         "ticker": "GBPUSD=X",
@@ -123,7 +95,6 @@ PAIRS = {
         "wb_base": "GBR",
         "wb_quote": "USA"
     },
-
     "AUDUSD": {
         "label": "AUD/USD",
         "ticker": "AUDUSD=X",
@@ -132,7 +103,6 @@ PAIRS = {
         "wb_base": "AUS",
         "wb_quote": "USA"
     },
-
     "NZDUSD": {
         "label": "NZD/USD",
         "ticker": "NZDUSD=X",
@@ -141,12 +111,28 @@ PAIRS = {
         "wb_base": "NZL",
         "wb_quote": "USA"
     }
+}
 
+FORECAST_MODEL_KEYS = [
+    "lightgbm",
+    "ridge",
+    "decision_tree",
+    "mlp",
+    "ppp",
+    "irp"
+]
+
+MODEL_LABELS = {
+    "lightgbm": "LightGBM",
+    "ridge": "Ridge",
+    "decision_tree": "Decision Tree",
+    "mlp": "MLP",
+    "ppp": "PPP",
+    "irp": "IRP"
 }
 
 
 def forecast_file_path(pair_key):
-
     return os.path.join(
         BASE_DIR,
         f"latest_forecast_{pair_key}.json"
@@ -154,7 +140,6 @@ def forecast_file_path(pair_key):
 
 
 def history_file_path(pair_key):
-
     return os.path.join(
         BASE_DIR,
         f"history_{pair_key}.json"
@@ -162,23 +147,14 @@ def history_file_path(pair_key):
 
 
 def forecast_archive_file_path(pair_key):
-
     return os.path.join(
         BASE_DIR,
         f"forecast_archive_{pair_key}.json"
     )
 
 
-# ============================================================
-# FORECAST DATE / STALE FORECAST HELPERS
-# ============================================================
-
 def next_business_day(date_value):
-    """
-    Return the next weekday after date_value.
-    For 2026-09-18 (Friday), this returns 2026-09-21 (Monday).
-    """
-    ts = pd.Timestamp(date_value)
+    ts = pd.Timestamp(date_value).normalize()
     next_day = ts + pd.Timedelta(days=1)
 
     while next_day.weekday() >= 5:
@@ -188,11 +164,6 @@ def next_business_day(date_value):
 
 
 def stored_forecast_is_stale(pair_key):
-    """
-    A saved forecast is stale when its forecast date is before the
-    next weekday from today. This prevents an old JSON file such as
-    2026-09-09 from being served indefinitely.
-    """
     path = forecast_file_path(pair_key)
 
     if not os.path.exists(path):
@@ -202,45 +173,35 @@ def stored_forecast_is_stale(pair_key):
         with open(path, encoding="utf-8") as f:
             saved = json.load(f)
 
-        saved_date = saved.get("forecast_date")
+        forecast_date = saved.get("forecast_date")
+        actual_date = saved.get("latest_available_date")
 
-        if not saved_date:
+        if not forecast_date or not actual_date:
             return True
 
-        today = pd.Timestamp.now().normalize()
-        expected_date = next_business_day(today)
+        expected_date = next_business_day(actual_date)
 
-        return pd.Timestamp(saved_date) < expected_date
+        return pd.Timestamp(forecast_date) < expected_date
 
     except Exception:
         return True
 
 
-# ============================================================
-# WORLD BANK HELPER
-# ============================================================
-
 def get_world_bank_indicator(country, indicator):
-
     url = (
         f"https://api.worldbank.org/v2/country/"
         f"{country}/indicator/{indicator}"
         f"?format=json&per_page=100"
     )
 
-    response = requests.get(
-        url,
-        timeout=30
-    )
-
+    response = requests.get(url, timeout=30)
     response.raise_for_status()
 
     data = response.json()
 
     if len(data) < 2 or data[1] is None:
         raise RuntimeError(
-            f"No World Bank data found for "
-            f"{country} / {indicator}"
+            f"No World Bank data found for {country}/{indicator}"
         )
 
     records = [
@@ -254,19 +215,13 @@ def get_world_bank_indicator(country, indicator):
 
     if not records:
         raise RuntimeError(
-            f"No usable World Bank data found for "
-            f"{country} / {indicator}"
+            f"No usable World Bank data found for {country}/{indicator}"
         )
 
     return pd.DataFrame(records).sort_values("year")
 
 
-# ============================================================
-# FEATURE ENGINEERING
-# ============================================================
-
 def build_features(df):
-
     df = df.copy()
 
     df["ret_1"] = df["price"].pct_change(1)
@@ -274,49 +229,16 @@ def build_features(df):
     df["ret_10"] = df["price"].pct_change(10)
     df["ret_20"] = df["price"].pct_change(20)
 
-    df["vol_5"] = (
-        df["ret_1"]
-        .rolling(5)
-        .std()
-    )
+    df["vol_5"] = df["ret_1"].rolling(5).std()
+    df["vol_20"] = df["ret_1"].rolling(20).std()
 
-    df["vol_20"] = (
-        df["ret_1"]
-        .rolling(20)
-        .std()
-    )
+    df["ma_5"] = df["price"].rolling(5).mean()
+    df["ma_20"] = df["price"].rolling(20).mean()
 
-    df["ma_5"] = (
-        df["price"]
-        .rolling(5)
-        .mean()
-    )
+    df["price_ma5_ratio"] = df["price"] / df["ma_5"]
+    df["price_ma20_ratio"] = df["price"] / df["ma_20"]
+    df["ma_ratio"] = df["ma_5"] / df["ma_20"]
 
-    df["ma_20"] = (
-        df["price"]
-        .rolling(20)
-        .mean()
-    )
-
-    df["ma_50"] = (
-        df["price"]
-        .rolling(50)
-        .mean()
-    )
-
-    df["price_ma5_ratio"] = (
-        df["price"] / df["ma_5"]
-    )
-
-    df["price_ma20_ratio"] = (
-        df["price"] / df["ma_20"]
-    )
-
-    df["ma_ratio"] = (
-        df["ma_5"] / df["ma_20"]
-    )
-
-    # RSI(14)
     delta = df["price"].diff()
 
     gain = (
@@ -333,25 +255,16 @@ def build_features(df):
 
     rs = gain / loss.replace(0, np.nan)
 
-    df["rsi_14"] = (
-        100 - 100 / (1 + rs)
-    )
+    df["rsi_14"] = 100 - (100 / (1 + rs))
 
-    # One-day-ahead log return target
     df["target_logret"] = np.log(
-        df["price"].shift(-HORIZON)
-        / df["price"]
+        df["price"].shift(-HORIZON) / df["price"]
     )
 
     return df
 
 
-# ============================================================
-# MODEL FACTORIES
-# ============================================================
-
 def create_model():
-
     return lgb.LGBMRegressor(
         n_estimators=300,
         max_depth=4,
@@ -366,7 +279,6 @@ def create_model():
 
 
 def create_ridge_model():
-
     return Ridge(
         alpha=1.0,
         random_state=RANDOM_STATE
@@ -374,7 +286,6 @@ def create_ridge_model():
 
 
 def create_tree_model():
-
     return DecisionTreeRegressor(
         max_depth=3,
         min_samples_leaf=10,
@@ -383,53 +294,25 @@ def create_tree_model():
 
 
 def create_mlp_model():
-
     return MLPRegressor(
         hidden_layer_sizes=(8,),
         activation="relu",
         solver="lbfgs",
-        alpha=1e-2,
+        alpha=0.01,
         max_iter=5000,
         random_state=RANDOM_STATE
     )
 
 
-def clip_logret(
-    value,
-    limit=MLP_LOGRET_CLIP
-):
-
-    if value > limit:
-        return limit
-
-    if value < -limit:
-        return -limit
-
-    return value
-
-
-# ============================================================
-# DAILY MODEL SELECTION
-#
-# Random Walk is a benchmark and is NEVER eligible for selection.
-# The six forecasting models are compared against the actual
-# next-day closing price from the previous forecast cycle.
-#
-# The selected model is then used for the next-day prediction.
-# ============================================================
-
-FORECAST_MODEL_KEYS = [
-    "lightgbm",
-    "ridge",
-    "decision_tree",
-    "mlp",
-    "ppp",
-    "irp"
-]
+def clip_logret(value):
+    return np.clip(
+        value,
+        -MLP_LOGRET_CLIP,
+        MLP_LOGRET_CLIP
+    )
 
 
 def load_forecast_archive(pair_key):
-
     path = forecast_archive_file_path(pair_key)
 
     if not os.path.exists(path):
@@ -439,28 +322,16 @@ def load_forecast_archive(pair_key):
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
 
-        if isinstance(data, list):
-            return data
+        return data if isinstance(data, list) else []
 
-    except Exception as e:
-        print(
-            f"[{datetime.now()}] "
-            f"Could not read forecast archive for {pair_key}: {e}"
-        )
-
-    return []
+    except Exception:
+        return []
 
 
 def save_forecast_archive(pair_key, archive):
-
     path = forecast_archive_file_path(pair_key)
 
-    with open(
-        path,
-        "w",
-        encoding="utf-8"
-    ) as f:
-
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(
             archive[-120:],
             f,
@@ -469,13 +340,10 @@ def save_forecast_archive(pair_key, archive):
 
 
 def archive_forecast(pair_key, result):
-
     archive = load_forecast_archive(pair_key)
 
     forecast_date = result.get("forecast_date")
 
-    # Do not create duplicate entries if the pipeline is run
-    # more than once on the same day.
     archive = [
         item
         for item in archive
@@ -495,13 +363,11 @@ def select_model_from_previous_forecast(
     actual_date,
     actual_price
 ):
-
     archive = load_forecast_archive(pair_key)
 
     if not archive:
         return None
 
-    # Find the forecast that was made for the actual date.
     candidates = [
         item
         for item in archive
@@ -516,7 +382,6 @@ def select_model_from_previous_forecast(
     errors = {}
 
     for model_key in FORECAST_MODEL_KEYS:
-
         value = previous.get(model_key)
 
         if value is None:
@@ -524,9 +389,11 @@ def select_model_from_previous_forecast(
 
         try:
             forecast_value = float(value)
+
             errors[model_key] = abs(
                 actual_price - forecast_value
             )
+
         except (TypeError, ValueError):
             continue
 
@@ -540,14 +407,7 @@ def select_model_from_previous_forecast(
 
     return {
         "selected_model_key": selected_model_key,
-        "selected_model_label": {
-            "lightgbm": "LightGBM",
-            "ridge": "Ridge",
-            "decision_tree": "Decision Tree",
-            "mlp": "MLP",
-            "ppp": "PPP",
-            "irp": "IRP"
-        }[selected_model_key],
+        "selected_model_label": MODEL_LABELS[selected_model_key],
         "selected_model_error": round(
             errors[selected_model_key],
             6
@@ -556,39 +416,311 @@ def select_model_from_previous_forecast(
             actual_price,
             6
         ),
-        "selected_model_evaluated_date": actual_date
+        "selected_model_evaluated_date": actual_date,
+        "selection_method": "previous-day absolute error"
     }
 
 
-# ============================================================
-# MAIN FORECAST PIPELINE
-# Runs once per trading day, per currency pair.
-# ============================================================
+def historical_model_selection(
+    df,
+    ppp_data,
+    rates
+):
+    usable = (
+        df
+        .dropna(
+            subset=FEATURE_COLS + ["target_logret"]
+        )
+        .copy()
+    )
 
-def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
+    if len(usable) < MIN_TRAIN_DAYS + SELECTION_WINDOW:
+        return None
 
+    validation_start = (
+        len(usable) - SELECTION_WINDOW
+    )
+
+    errors = {
+        "lightgbm": [],
+        "ridge": [],
+        "decision_tree": [],
+        "mlp": [],
+        "ppp": [],
+        "irp": []
+    }
+
+    for i in range(
+        validation_start,
+        len(usable)
+    ):
+        train = usable.iloc[:i].copy()
+        test = usable.iloc[[i]].copy()
+
+        if len(train) < MIN_TRAIN_DAYS:
+            continue
+
+        X_train = train[FEATURE_COLS]
+        y_train = train["target_logret"]
+        X_test = test[FEATURE_COLS]
+
+        previous_price = float(
+            train["price"].iloc[-1]
+        )
+
+        actual_price = float(
+            test["price"].iloc[0]
+        )
+
+        test_year = int(
+            test["year"].iloc[0]
+        )
+
+        try:
+            model = create_model()
+
+            model.fit(
+                X_train,
+                y_train
+            )
+
+            pred = model.predict(X_test)[0]
+
+            forecast = (
+                previous_price *
+                np.exp(pred)
+            )
+
+            errors["lightgbm"].append(
+                abs(actual_price - forecast)
+            )
+
+        except Exception as e:
+            print(
+                f"Historical LightGBM error: {e}"
+            )
+
+        try:
+            scaler = StandardScaler()
+
+            X_train_scaled = (
+                scaler.fit_transform(X_train)
+            )
+
+            X_test_scaled = (
+                scaler.transform(X_test)
+            )
+
+            model = create_ridge_model()
+
+            model.fit(
+                X_train_scaled,
+                y_train
+            )
+
+            pred = model.predict(
+                X_test_scaled
+            )[0]
+
+            forecast = (
+                previous_price *
+                np.exp(pred)
+            )
+
+            errors["ridge"].append(
+                abs(actual_price - forecast)
+            )
+
+        except Exception as e:
+            print(
+                f"Historical Ridge error: {e}"
+            )
+
+        try:
+            model = create_tree_model()
+
+            model.fit(
+                X_train,
+                y_train
+            )
+
+            pred = model.predict(
+                X_test
+            )[0]
+
+            forecast = (
+                previous_price *
+                np.exp(pred)
+            )
+
+            errors["decision_tree"].append(
+                abs(actual_price - forecast)
+            )
+
+        except Exception as e:
+            print(
+                f"Historical Tree error: {e}"
+            )
+
+        try:
+            scaler = StandardScaler()
+
+            X_train_scaled = (
+                scaler.fit_transform(X_train)
+            )
+
+            X_test_scaled = (
+                scaler.transform(X_test)
+            )
+
+            model = create_mlp_model()
+
+            model.fit(
+                X_train_scaled,
+                y_train
+            )
+
+            pred = model.predict(
+                X_test_scaled
+            )[0]
+
+            pred = clip_logret(pred)
+
+            forecast = (
+                previous_price *
+                np.exp(pred)
+            )
+
+            errors["mlp"].append(
+                abs(actual_price - forecast)
+            )
+
+        except Exception as e:
+            print(
+                f"Historical MLP error: {e}"
+            )
+
+        try:
+            ppp_rows = (
+                ppp_data[
+                    ppp_data["year"] <= test_year
+                ]
+                .dropna(
+                    subset=["ppp_rate"]
+                )
+                .sort_values("year")
+            )
+
+            if not ppp_rows.empty:
+                ppp_forecast = float(
+                    ppp_rows.iloc[-1]["ppp_rate"]
+                )
+
+                errors["ppp"].append(
+                    abs(
+                        actual_price -
+                        ppp_forecast
+                    )
+                )
+
+        except Exception as e:
+            print(
+                f"Historical PPP error: {e}"
+            )
+
+        try:
+            rate_rows = (
+                rates[
+                    rates["year"] <= test_year
+                ]
+                .dropna(
+                    subset=[
+                        "quote_rate_decimal",
+                        "base_rate_decimal"
+                    ]
+                )
+                .sort_values("year")
+            )
+
+            if not rate_rows.empty:
+                row = rate_rows.iloc[-1]
+
+                quote_rate = float(
+                    row["quote_rate_decimal"]
+                )
+
+                base_rate = float(
+                    row["base_rate_decimal"]
+                )
+
+                irp_forecast = (
+                    previous_price *
+                    (
+                        (1 + quote_rate) /
+                        (1 + base_rate)
+                    ) **
+                    (1 / DAYS_IN_YEAR)
+                )
+
+                errors["irp"].append(
+                    abs(
+                        actual_price -
+                        irp_forecast
+                    )
+                )
+
+        except Exception as e:
+            print(
+                f"Historical IRP error: {e}"
+            )
+
+    mae = {}
+
+    for model_key, model_errors in errors.items():
+
+        if model_errors:
+            mae[model_key] = float(
+                np.mean(model_errors)
+            )
+
+    if not mae:
+        return None
+
+    selected_model_key = min(
+        mae,
+        key=mae.get
+    )
+
+    return {
+        "selected_model_key": selected_model_key,
+        "selected_model_label": MODEL_LABELS[selected_model_key],
+        "selected_model_error": round(
+            mae[selected_model_key],
+            6
+        ),
+        "selection_method": (
+            f"{SELECTION_WINDOW}-day "
+            f"walk-forward MAE"
+        ),
+        "selection_mae": {
+            key: round(value, 6)
+            for key, value in mae.items()
+        }
+    }
+
+
+def run_forecast_pipeline(
+    pair_key=DEFAULT_PAIR
+):
     if pair_key not in PAIRS:
-        raise ValueError(f"Unknown pair: {pair_key}")
+        raise ValueError(
+            f"Unknown pair: {pair_key}"
+        )
 
     cfg = PAIRS[pair_key]
 
-    ticker = cfg["ticker"]
-    base_ccy = cfg["base"]
-    quote_ccy = cfg["quote"]
-    wb_base = cfg["wb_base"]
-    wb_quote = cfg["wb_quote"]
-
-    print(
-        f"[{datetime.now()}] "
-        f"Running daily forecast pipeline for {pair_key}..."
-    )
-
-    # ========================================================
-    # DAILY PRICE DATA
-    # ========================================================
-
     fx = yf.download(
-        ticker,
+        cfg["ticker"],
         period="10y",
         interval="1d",
         auto_adjust=False,
@@ -597,12 +729,17 @@ def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
 
     if fx.empty:
         raise RuntimeError(
-            f"Could not download {pair_key} data from Yahoo Finance."
+            f"Could not download {pair_key} data."
         )
 
-    # Handle MultiIndex columns returned by newer yfinance versions
-    if isinstance(fx.columns, pd.MultiIndex):
-        fx.columns = fx.columns.get_level_values(0)
+    if isinstance(
+        fx.columns,
+        pd.MultiIndex
+    ):
+        fx.columns = (
+            fx.columns
+            .get_level_values(0)
+        )
 
     fx = fx.reset_index()
 
@@ -612,16 +749,6 @@ def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
             "Close": "price"
         }
     )
-
-    if "date" not in fx.columns:
-        raise RuntimeError(
-            "Yahoo Finance data does not contain a Date column."
-        )
-
-    if "price" not in fx.columns:
-        raise RuntimeError(
-            "Yahoo Finance data does not contain a Close column."
-        )
 
     df = fx[
         ["date", "price"]
@@ -640,41 +767,32 @@ def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
     df = df.dropna()
 
     df = df[
-        df["date"] >= pd.Timestamp(START_DATE)
+        df["date"] >= pd.Timestamp(
+            START_DATE
+        )
     ].copy()
 
     df = (
         df
         .sort_values("date")
-        .drop_duplicates(subset="date")
+        .drop_duplicates(
+            subset="date"
+        )
         .reset_index(drop=True)
     )
 
-    if df.empty:
-        raise RuntimeError(
-            f"No {pair_key} observations available from 2020 onward."
-        )
-
     if len(df) < MIN_TRAIN_DAYS:
         raise RuntimeError(
-            f"Not enough {pair_key} observations. "
-            f"Required: {MIN_TRAIN_DAYS}, "
-            f"available: {len(df)}."
+            f"Not enough data for {pair_key}."
         )
 
     df["year"] = df["date"].dt.year
 
     df = build_features(df)
 
-    # ========================================================
-    # PPP
-    # (price = quote-per-base, so relative PPP moves the
-    # base-year price by the quote/base CPI ratio)
-    # ========================================================
-
     quote_cpi = (
         get_world_bank_indicator(
-            wb_quote,
+            cfg["wb_quote"],
             "FP.CPI.TOTL"
         )
         .rename(
@@ -686,7 +804,7 @@ def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
 
     base_cpi = (
         get_world_bank_indicator(
-            wb_base,
+            cfg["wb_base"],
             "FP.CPI.TOTL"
         )
         .rename(
@@ -704,7 +822,8 @@ def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
     )
 
     annual_fx = (
-        df.groupby("year")["price"]
+        df
+        .groupby("year")["price"]
         .mean()
         .reset_index()
         .rename(
@@ -721,38 +840,42 @@ def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
         how="inner"
     )
 
-    if PPP_BASE_YEAR not in ppp_data["year"].values:
-        raise RuntimeError(
-            "PPP base year not available."
-        )
+    base_row = (
+        ppp_data[
+            ppp_data["year"] == PPP_BASE_YEAR
+        ]
+        .iloc[0]
+    )
 
-    base_row = ppp_data[
-        ppp_data["year"] == PPP_BASE_YEAR
-    ].iloc[0]
+    base_price = float(
+        base_row["average_price"]
+    )
 
-    base_price = base_row["average_price"]
-    base_quote_cpi = base_row["quote_cpi"]
-    base_base_cpi = base_row["base_cpi"]
+    base_quote_cpi = float(
+        base_row["quote_cpi"]
+    )
+
+    base_base_cpi = float(
+        base_row["base_cpi"]
+    )
 
     ppp_data["ppp_rate"] = (
         base_price
-        * (
-            ppp_data["quote_cpi"]
-            / base_quote_cpi
+        *
+        (
+            ppp_data["quote_cpi"] /
+            base_quote_cpi
         )
-        / (
-            ppp_data["base_cpi"]
-            / base_base_cpi
+        /
+        (
+            ppp_data["base_cpi"] /
+            base_base_cpi
         )
     )
 
-    # ========================================================
-    # IRP
-    # ========================================================
-
     quote_rate = (
         get_world_bank_indicator(
-            wb_quote,
+            cfg["wb_quote"],
             "FR.INR.LEND"
         )
         .rename(
@@ -764,7 +887,7 @@ def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
 
     base_rate = (
         get_world_bank_indicator(
-            wb_base,
+            cfg["wb_base"],
             "FR.INR.LEND"
         )
         .rename(
@@ -789,139 +912,140 @@ def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
         rates["base_rate"] / 100
     )
 
-    # ========================================================
-    # TRAINING DATA
-    # ========================================================
-
-    train_df = df.dropna(
-        subset=FEATURE_COLS + ["target_logret"]
-    ).copy()
+    train_df = (
+        df
+        .dropna(
+            subset=FEATURE_COLS + ["target_logret"]
+        )
+        .copy()
+    )
 
     if len(train_df) < MIN_TRAIN_DAYS:
         raise RuntimeError(
-            f"Not enough usable training observations. "
-            f"Required: {MIN_TRAIN_DAYS}, "
-            f"available: {len(train_df)}."
+            "Not enough usable training data."
         )
 
-    # ========================================================
-    # TRAIN MODELS
-    # ========================================================
+    X_train = train_df[
+        FEATURE_COLS
+    ]
 
-    model = create_model()
+    y_train = train_df[
+        "target_logret"
+    ]
 
-    model.fit(
-        train_df[FEATURE_COLS],
-        train_df["target_logret"]
+    lgbm_model = create_model()
+
+    lgbm_model.fit(
+        X_train,
+        y_train
     )
 
-    feature_scaler = StandardScaler()
+    scaler = StandardScaler()
 
-    train_features_scaled = (
-        feature_scaler.fit_transform(
-            train_df[FEATURE_COLS]
+    X_train_scaled = (
+        scaler.fit_transform(
+            X_train
         )
     )
 
     ridge_model = create_ridge_model()
 
     ridge_model.fit(
-        train_features_scaled,
-        train_df["target_logret"]
+        X_train_scaled,
+        y_train
     )
 
     tree_model = create_tree_model()
 
     tree_model.fit(
-        train_df[FEATURE_COLS],
-        train_df["target_logret"]
+        X_train,
+        y_train
     )
 
     mlp_model = create_mlp_model()
 
     mlp_model.fit(
-        train_features_scaled,
-        train_df["target_logret"]
+        X_train_scaled,
+        y_train
     )
 
-    # ========================================================
-    # LATEST AVAILABLE DAILY OBSERVATION
-    # ========================================================
-
-    last_known_date = df["date"].iloc[-1]
+    last_known_date = (
+        df["date"].iloc[-1]
+    )
 
     last_known_price = float(
         df["price"].iloc[-1]
     )
 
     latest_features = (
-        df.iloc[[-1]][FEATURE_COLS]
+        df
+        .iloc[[-1]]
+        [FEATURE_COLS]
     )
 
-    if latest_features.isnull().values.any():
-        raise RuntimeError(
-            "Latest observation is missing required features."
-        )
-
     latest_features_scaled = (
-        feature_scaler.transform(
+        scaler.transform(
             latest_features
         )
     )
 
-    # ========================================================
-    # FORECASTS
-    # ========================================================
-
-    predicted_logret = model.predict(
-        latest_features
-    )[0]
-
-    forecast_lgbm = (
-        last_known_price
-        * np.exp(predicted_logret)
+    lgbm_prediction = (
+        lgbm_model
+        .predict(
+            latest_features
+        )[0]
     )
 
-    predicted_logret_ridge = (
-        ridge_model.predict(
+    forecast_lgbm = (
+        last_known_price *
+        np.exp(lgbm_prediction)
+    )
+
+    ridge_prediction = (
+        ridge_model
+        .predict(
             latest_features_scaled
         )[0]
     )
 
     forecast_ridge = (
-        last_known_price
-        * np.exp(predicted_logret_ridge)
+        last_known_price *
+        np.exp(ridge_prediction)
     )
 
-    predicted_logret_tree = (
-        tree_model.predict(
+    tree_prediction = (
+        tree_model
+        .predict(
             latest_features
         )[0]
     )
 
     forecast_tree = (
-        last_known_price
-        * np.exp(predicted_logret_tree)
+        last_known_price *
+        np.exp(tree_prediction)
     )
 
-    predicted_logret_mlp = (
-        mlp_model.predict(
+    mlp_prediction = (
+        mlp_model
+        .predict(
             latest_features_scaled
         )[0]
     )
 
-    predicted_logret_mlp = clip_logret(
-        predicted_logret_mlp
+    mlp_prediction = clip_logret(
+        mlp_prediction
     )
 
     forecast_mlp = (
-        last_known_price
-        * np.exp(predicted_logret_mlp)
+        last_known_price *
+        np.exp(mlp_prediction)
     )
 
     latest_ppp_row = (
         ppp_data
-        .dropna(subset=["ppp_rate"])
+        .dropna(
+            subset=["ppp_rate"]
+        )
         .sort_values("year")
         .iloc[-1]
     )
@@ -946,12 +1070,16 @@ def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
         .iloc[-1]
     )
 
-    latest_quote_rate = float(
-        latest_rate_row["quote_rate_decimal"]
+    quote_rate_value = float(
+        latest_rate_row[
+            "quote_rate_decimal"
+        ]
     )
 
-    latest_base_rate = float(
-        latest_rate_row["base_rate_decimal"]
+    base_rate_value = float(
+        latest_rate_row[
+            "base_rate_decimal"
+        ]
     )
 
     latest_rate_year = int(
@@ -959,52 +1087,84 @@ def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
     )
 
     forecast_irp = (
-        last_known_price
-        * (
-            (1 + latest_quote_rate)
-            / (1 + latest_base_rate)
-        ) ** (1 / DAYS_IN_YEAR)
+        last_known_price *
+        (
+            (1 + quote_rate_value) /
+            (1 + base_rate_value)
+        ) **
+        (1 / DAYS_IN_YEAR)
     )
 
     forecast_rw = last_known_price
 
-    forecast_date = next_business_day(last_known_date)
-
-    # Compare the previous day's six model forecasts with today's
-    # actual close. Random Walk is deliberately excluded.
-    previous_selection = select_model_from_previous_forecast(
-        pair_key,
-        last_known_date.strftime("%Y-%m-%d"),
-        last_known_price
+    forecast_date = (
+        next_business_day(
+            last_known_date
+        )
     )
 
-    # The selected model is the model that performed best on the
-    # previous forecast day. Its CURRENT forecast becomes the
-    # next-day prediction displayed by the application.
-    if previous_selection is not None:
+    actual_date_string = (
+        last_known_date.strftime(
+            "%Y-%m-%d"
+        )
+    )
 
-        selected_model_key = previous_selection[
-            "selected_model_key"
-        ]
+    previous_selection = (
+        select_model_from_previous_forecast(
+            pair_key,
+            actual_date_string,
+            last_known_price
+        )
+    )
+
+    if previous_selection is None:
+        historical_selection = (
+            historical_model_selection(
+                df,
+                ppp_data,
+                rates
+            )
+        )
+    else:
+        historical_selection = None
+
+    selection = (
+        previous_selection
+        if previous_selection is not None
+        else historical_selection
+    )
+
+    if selection is not None:
+
+        selected_model_key = (
+            selection[
+                "selected_model_key"
+            ]
+        )
+
+        forecasts = {
+            "lightgbm": forecast_lgbm,
+            "ridge": forecast_ridge,
+            "decision_tree": forecast_tree,
+            "mlp": forecast_mlp,
+            "ppp": forecast_ppp,
+            "irp": forecast_irp
+        }
 
         selected_model_forecast = float(
-            {
-                "lightgbm": forecast_lgbm,
-                "ridge": forecast_ridge,
-                "decision_tree": forecast_tree,
-                "mlp": forecast_mlp,
-                "ppp": forecast_ppp,
-                "irp": forecast_irp
-            }[selected_model_key]
+            forecasts[
+                selected_model_key
+            ]
         )
 
-        selected_model_direction = (
-            "UP"
-            if selected_model_forecast > last_known_price
-            else "DOWN"
-            if selected_model_forecast < last_known_price
-            else "FLAT"
-        )
+        if selected_model_forecast > last_known_price:
+            selected_model_direction = "UP"
+
+        elif selected_model_forecast < last_known_price:
+            selected_model_direction = "DOWN"
+
+        else:
+            selected_model_direction = "FLAT"
 
     else:
 
@@ -1013,92 +1173,130 @@ def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
         selected_model_direction = None
 
     if forecast_lgbm > last_known_price:
-
-        direction = "UP"
+        lightgbm_direction = "UP"
 
     elif forecast_lgbm < last_known_price:
-
-        direction = "DOWN"
+        lightgbm_direction = "DOWN"
 
     else:
+        lightgbm_direction = "FLAT"
 
-        direction = "FLAT"
-
-    change_pct = (
-        (forecast_lgbm - last_known_price)
-        / last_known_price
-        * 100
+    lightgbm_change_percent = (
+        (
+            forecast_lgbm -
+            last_known_price
+        )
+        /
+        last_known_price
+        *
+        100
     )
-
-    # ========================================================
-    # RESULT
-    # ========================================================
 
     result = {
 
-        "pair": pair_key,
+        "pair":
+            pair_key,
 
-        "pair_label": cfg["label"],
+        "pair_label":
+            cfg["label"],
 
-        "base_ccy": base_ccy,
+        "base_ccy":
+            cfg["base"],
 
-        "quote_ccy": quote_ccy,
+        "quote_ccy":
+            cfg["quote"],
 
         "latest_available_date":
-            last_known_date.strftime("%Y-%m-%d"),
+            last_known_date.strftime(
+                "%Y-%m-%d"
+            ),
 
         "latest_price":
-            round(last_known_price, 4),
+            round(
+                last_known_price,
+                4
+            ),
 
         "forecast_date":
-            forecast_date.strftime("%Y-%m-%d"),
+            forecast_date.strftime(
+                "%Y-%m-%d"
+            ),
 
         "random_walk":
-            round(forecast_rw, 4),
+            round(
+                forecast_rw,
+                4
+            ),
+
+        "lightgbm":
+            round(
+                forecast_lgbm,
+                4
+            ),
+
+        "ridge":
+            round(
+                forecast_ridge,
+                4
+            ),
+
+        "decision_tree":
+            round(
+                forecast_tree,
+                4
+            ),
+
+        "mlp":
+            round(
+                forecast_mlp,
+                4
+            ),
 
         "ppp":
-            round(forecast_ppp, 4),
+            round(
+                forecast_ppp,
+                4
+            ),
+
+        "irp":
+            round(
+                forecast_irp,
+                4
+            ),
 
         "ppp_cpi_year":
             latest_ppp_year,
 
-        "irp":
-            round(forecast_irp, 4),
-
         "irp_rate_year":
             latest_rate_year,
 
-        "ridge":
-            round(forecast_ridge, 4),
-
-        "decision_tree":
-            round(forecast_tree, 4),
-
-        "mlp":
-            round(forecast_mlp, 4),
-
-        "lightgbm":
-            round(forecast_lgbm, 4),
-
         "lightgbm_change_percent":
-            round(change_pct, 4),
+            round(
+                lightgbm_change_percent,
+                4
+            ),
 
         "lightgbm_direction":
-            direction,
+            lightgbm_direction,
 
         "selected_model_key":
             selected_model_key,
 
         "selected_model_label":
             (
-                previous_selection["selected_model_label"]
-                if previous_selection is not None
+                selection[
+                    "selected_model_label"
+                ]
+                if selection is not None
                 else None
             ),
 
         "selected_model_forecast":
             (
-                round(selected_model_forecast, 4)
+                round(
+                    selected_model_forecast,
+                    4
+                )
                 if selected_model_forecast is not None
                 else None
             ),
@@ -1108,28 +1306,51 @@ def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
 
         "selected_model_error":
             (
-                previous_selection["selected_model_error"]
-                if previous_selection is not None
+                selection[
+                    "selected_model_error"
+                ]
+                if selection is not None
                 else None
             ),
 
         "selected_model_actual_close":
             (
-                previous_selection["selected_model_actual_close"]
-                if previous_selection is not None
+                selection.get(
+                    "selected_model_actual_close"
+                )
+                if selection is not None
                 else None
             ),
 
         "selected_model_evaluated_date":
             (
-                previous_selection["selected_model_evaluated_date"]
-                if previous_selection is not None
+                selection.get(
+                    "selected_model_evaluated_date"
+                )
+                if selection is not None
+                else None
+            ),
+
+        "selection_method":
+            (
+                selection.get(
+                    "selection_method"
+                )
+                if selection is not None
+                else None
+            ),
+
+        "selection_mae":
+            (
+                selection.get(
+                    "selection_mae"
+                )
+                if selection is not None
                 else None
             ),
 
         "generated_at":
             datetime.now().isoformat()
-
     }
 
     with open(
@@ -1144,29 +1365,25 @@ def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
             indent=2
         )
 
-    # Keep a rolling archive so the next run can evaluate
-    # yesterday's forecasts against yesterday's actual close.
     archive_forecast(
         pair_key,
         result
     )
 
-    # ========================================================
-    # SAVE LAST 60 DAYS
-    # ========================================================
-
-    recent = (
-        df[["date", "price"]]
-        .tail(60)
+    recent_history = (
+        df[
+            ["date", "price"]
+        ]
+        .tail(365)
         .copy()
     )
 
-    recent["date"] = (
-        recent["date"]
+    recent_history["date"] = (
+        recent_history["date"]
         .dt.strftime("%Y-%m-%d")
     )
 
-    history = recent.to_dict(
+    history = recent_history.to_dict(
         orient="records"
     )
 
@@ -1184,44 +1401,20 @@ def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
 
     print(
         f"[{datetime.now()}] "
-        f"Forecast completed for {pair_key}. "
-        f"Selected model -> "
+        f"{pair_key} | "
+        f"Selected: "
         f"{selected_model_key or 'pending'} | "
-        f"Next-day forecast -> "
+        f"Next forecast: "
         f"{selected_model_forecast if selected_model_forecast is not None else 'pending'} | "
-        f"Random Walk benchmark -> "
+        f"Random Walk: "
         f"{forecast_rw:.4f}"
     )
 
     return result
 
 
-def run_all_pairs():
-
-    results = {}
-
-    errors = {}
-
-    for pair_key in PAIRS:
-
-        try:
-
-            results[pair_key] = run_forecast_pipeline(pair_key)
-
-        except Exception as e:
-
-            print(
-                f"[{datetime.now()}] "
-                f"Pipeline failed for {pair_key}: {e}"
-            )
-
-            errors[pair_key] = str(e)
-
-    return results, errors
-
-
 # ============================================================
-# FLASK APP
+# FLASK
 # ============================================================
 
 app = Flask(
@@ -1251,29 +1444,33 @@ def service_worker():
     )
 
 
-# ============================================================
-# PAIRS API
-# Lets the frontend build a currency-pair selector without
-# hardcoding the list.
-# ============================================================
-
 @app.route("/api/pairs")
 def pairs():
 
     return jsonify([
+
         {
             "key": key,
             "label": cfg["label"],
             "base": cfg["base"],
             "quote": cfg["quote"]
         }
+
         for key, cfg in PAIRS.items()
+
     ])
 
 
-def _resolve_pair_arg():
+def resolve_pair():
 
-    pair_key = request.args.get("pair", DEFAULT_PAIR).upper()
+    pair_key = (
+        request.args
+        .get(
+            "pair",
+            DEFAULT_PAIR
+        )
+        .upper()
+    )
 
     if pair_key not in PAIRS:
         return None
@@ -1281,31 +1478,30 @@ def _resolve_pair_arg():
     return pair_key
 
 
-# ============================================================
-# FORECAST API
-# ============================================================
-
 @app.route("/api/predict")
 def predict():
 
-    pair_key = _resolve_pair_arg()
+    pair_key = resolve_pair()
 
     if pair_key is None:
 
         return jsonify({
-            "error": f"Unknown pair '{request.args.get('pair')}'"
+            "error": "Unknown FX pair."
         }), 400
 
-    path = forecast_file_path(pair_key)
+    path = forecast_file_path(
+        pair_key
+    )
 
-    # Do not serve an old saved forecast indefinitely.
-    # Example: a saved 2026-09-09 forecast must be regenerated
-    # when the current expected next weekday is 2026-09-21.
-    if stored_forecast_is_stale(pair_key):
+    if stored_forecast_is_stale(
+        pair_key
+    ):
 
         try:
 
-            run_forecast_pipeline(pair_key)
+            run_forecast_pipeline(
+                pair_key
+            )
 
         except Exception as e:
 
@@ -1330,31 +1526,31 @@ def predict():
             "error": str(e)
         }), 500
 
-
-# ============================================================
-# HISTORY API
-# ============================================================
 
 @app.route("/api/history")
 def history():
 
-    pair_key = _resolve_pair_arg()
+    pair_key = resolve_pair()
 
     if pair_key is None:
 
         return jsonify({
-            "error": f"Unknown pair '{request.args.get('pair')}'"
+            "error": "Unknown FX pair."
         }), 400
 
-    path = history_file_path(pair_key)
+    path = history_file_path(
+        pair_key
+    )
 
-    # Refresh the pair when its saved forecast is stale so the
-    # historical closing-rate data is updated as well.
-    if stored_forecast_is_stale(pair_key):
+    if stored_forecast_is_stale(
+        pair_key
+    ):
 
         try:
 
-            run_forecast_pipeline(pair_key)
+            run_forecast_pipeline(
+                pair_key
+            )
 
         except Exception as e:
 
@@ -1380,34 +1576,33 @@ def history():
         }), 500
 
 
-# ============================================================
-# MANUAL REFRESH API
-# With no ?pair=, refreshes every configured pair.
-# ============================================================
-
 @app.route(
     "/api/refresh",
-    methods=["POST"]
+    methods=["GET", "POST"]
 )
 def refresh():
 
-    requested_pair = request.args.get("pair")
+    requested_pair = request.args.get(
+        "pair"
+    )
 
     if requested_pair:
 
-        pair_key = _resolve_pair_arg()
+        pair_key = resolve_pair()
 
         if pair_key is None:
 
             return jsonify({
-                "error": f"Unknown pair '{requested_pair}'"
+                "error": "Unknown FX pair."
             }), 400
 
         try:
 
-            result = run_forecast_pipeline(pair_key)
-
-            return jsonify(result)
+            return jsonify(
+                run_forecast_pipeline(
+                    pair_key
+                )
+            )
 
         except Exception as e:
 
@@ -1415,7 +1610,22 @@ def refresh():
                 "error": str(e)
             }), 500
 
-    results, errors = run_all_pairs()
+    results = {}
+    errors = {}
+
+    for pair_key in PAIRS:
+
+        try:
+
+            results[pair_key] = (
+                run_forecast_pipeline(
+                    pair_key
+                )
+            )
+
+        except Exception as e:
+
+            errors[pair_key] = str(e)
 
     return jsonify({
         "results": results,
@@ -1423,97 +1633,92 @@ def refresh():
     })
 
 
-# ============================================================
-# CRON-FRIENDLY REFRESH
-# Always refreshes every configured pair.
-# ============================================================
-
 @app.route(
     "/api/refresh-cron",
     methods=["GET", "POST"]
 )
 def refresh_cron():
 
-    requested_pair = request.args.get("pair")
+    requested_pair = request.args.get(
+        "pair"
+    )
 
-    if requested_pair:
+    if not requested_pair:
 
-        pair_key = _resolve_pair_arg()
+        return jsonify({
 
-        if pair_key is None:
+            "message":
+                "Provide ?pair=PAIR",
 
-            return jsonify({
-                "error": f"Unknown pair '{requested_pair}'"
-            }), 400
+            "pairs":
+                list(PAIRS.keys())
 
-        try:
+        }), 400
 
-            return jsonify(
-                run_forecast_pipeline(pair_key)
+    pair_key = resolve_pair()
+
+    if pair_key is None:
+
+        return jsonify({
+            "error": "Unknown FX pair."
+        }), 400
+
+    try:
+
+        return jsonify(
+            run_forecast_pipeline(
+                pair_key
             )
+        )
 
-        except Exception as e:
+    except Exception as e:
 
-            return jsonify({
-                "error": str(e)
-            }), 500
+        return jsonify({
+            "error": str(e)
+        }), 500
 
-    # Do not run all eight heavy pipelines in one request.
-    # The caller should invoke this endpoint once per pair.
-    return jsonify({
-        "message": "Provide ?pair=PAIR to refresh one FX pair.",
-        "pairs": list(PAIRS.keys())
-    }), 400
-
-
-# ============================================================
-# DAILY TRADING-DAY SCHEDULER
-#
-# IMPORTANT:
-# Do not start APScheduler when using Gunicorn workers.
-# Set ENABLE_SCHEDULER=true if you specifically want the
-# in-process scheduler enabled.
-# ============================================================
 
 scheduler = None
 
-if os.environ.get(
-    "ENABLE_SCHEDULER",
-    "false"
-).lower() == "true":
+if (
+    os.environ
+    .get(
+        "ENABLE_SCHEDULER",
+        "false"
+    )
+    .lower()
+    == "true"
+):
 
     scheduler = BackgroundScheduler(
         timezone="Asia/Kolkata"
     )
 
-    # Keep this disabled on Render unless you deliberately want
-    # the in-process scheduler. The public refresh-cron endpoint
-    # is designed to refresh one pair at a time.
     scheduler.add_job(
-        lambda: run_forecast_pipeline(DEFAULT_PAIR),
+
+        lambda:
+            run_forecast_pipeline(
+                DEFAULT_PAIR
+            ),
+
         "cron",
+
         day_of_week="mon-fri",
+
         hour=18,
+
         minute=0,
+
         max_instances=1,
+
         coalesce=True
+
     )
 
     scheduler.start()
 
-    print(
-        "APScheduler started."
-    )
-
-
-# ============================================================
-# START FLASK
-# ============================================================
 
 if __name__ == "__main__":
-
-    # Do not train all eight FX pairs at startup.
-    # Generate a pair only when its API endpoint is requested.
 
     port = int(
         os.environ.get(
