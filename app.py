@@ -161,6 +161,14 @@ def history_file_path(pair_key):
     )
 
 
+def forecast_archive_file_path(pair_key):
+
+    return os.path.join(
+        BASE_DIR,
+        f"forecast_archive_{pair_key}.json"
+    )
+
+
 # ============================================================
 # WORLD BANK HELPER
 # ============================================================
@@ -351,6 +359,158 @@ def clip_logret(
         return -limit
 
     return value
+
+
+# ============================================================
+# DAILY MODEL SELECTION
+#
+# Random Walk is a benchmark and is NEVER eligible for selection.
+# The six forecasting models are compared against the actual
+# next-day closing price from the previous forecast cycle.
+#
+# The selected model is then used for the next-day prediction.
+# ============================================================
+
+FORECAST_MODEL_KEYS = [
+    "lightgbm",
+    "ridge",
+    "decision_tree",
+    "mlp",
+    "ppp",
+    "irp"
+]
+
+
+def load_forecast_archive(pair_key):
+
+    path = forecast_archive_file_path(pair_key)
+
+    if not os.path.exists(path):
+        return []
+
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+
+        if isinstance(data, list):
+            return data
+
+    except Exception as e:
+        print(
+            f"[{datetime.now()}] "
+            f"Could not read forecast archive for {pair_key}: {e}"
+        )
+
+    return []
+
+
+def save_forecast_archive(pair_key, archive):
+
+    path = forecast_archive_file_path(pair_key)
+
+    with open(
+        path,
+        "w",
+        encoding="utf-8"
+    ) as f:
+
+        json.dump(
+            archive[-120:],
+            f,
+            indent=2
+        )
+
+
+def archive_forecast(pair_key, result):
+
+    archive = load_forecast_archive(pair_key)
+
+    forecast_date = result.get("forecast_date")
+
+    # Do not create duplicate entries if the pipeline is run
+    # more than once on the same day.
+    archive = [
+        item
+        for item in archive
+        if item.get("forecast_date") != forecast_date
+    ]
+
+    archive.append(result)
+
+    save_forecast_archive(
+        pair_key,
+        archive
+    )
+
+
+def select_model_from_previous_forecast(
+    pair_key,
+    actual_date,
+    actual_price
+):
+
+    archive = load_forecast_archive(pair_key)
+
+    if not archive:
+        return None
+
+    # Find the forecast that was made for the actual date.
+    candidates = [
+        item
+        for item in archive
+        if item.get("forecast_date") == actual_date
+    ]
+
+    if not candidates:
+        return None
+
+    previous = candidates[-1]
+
+    errors = {}
+
+    for model_key in FORECAST_MODEL_KEYS:
+
+        value = previous.get(model_key)
+
+        if value is None:
+            continue
+
+        try:
+            forecast_value = float(value)
+            errors[model_key] = abs(
+                actual_price - forecast_value
+            )
+        except (TypeError, ValueError):
+            continue
+
+    if not errors:
+        return None
+
+    selected_model_key = min(
+        errors,
+        key=errors.get
+    )
+
+    return {
+        "selected_model_key": selected_model_key,
+        "selected_model_label": {
+            "lightgbm": "LightGBM",
+            "ridge": "Ridge",
+            "decision_tree": "Decision Tree",
+            "mlp": "MLP",
+            "ppp": "PPP",
+            "irp": "IRP"
+        }[selected_model_key],
+        "selected_model_error": round(
+            errors[selected_model_key],
+            6
+        ),
+        "selected_model_actual_close": round(
+            actual_price,
+            6
+        ),
+        "selected_model_evaluated_date": actual_date
+    }
 
 
 # ============================================================
@@ -766,6 +926,48 @@ def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
         + pd.tseries.offsets.BDay(1)
     )
 
+    # Compare the previous day's six model forecasts with today's
+    # actual close. Random Walk is deliberately excluded.
+    previous_selection = select_model_from_previous_forecast(
+        pair_key,
+        last_known_date.strftime("%Y-%m-%d"),
+        last_known_price
+    )
+
+    # The selected model is the model that performed best on the
+    # previous forecast day. Its CURRENT forecast becomes the
+    # next-day prediction displayed by the application.
+    if previous_selection is not None:
+
+        selected_model_key = previous_selection[
+            "selected_model_key"
+        ]
+
+        selected_model_forecast = float(
+            {
+                "lightgbm": forecast_lgbm,
+                "ridge": forecast_ridge,
+                "decision_tree": forecast_tree,
+                "mlp": forecast_mlp,
+                "ppp": forecast_ppp,
+                "irp": forecast_irp
+            }[selected_model_key]
+        )
+
+        selected_model_direction = (
+            "UP"
+            if selected_model_forecast > last_known_price
+            else "DOWN"
+            if selected_model_forecast < last_known_price
+            else "FLAT"
+        )
+
+    else:
+
+        selected_model_key = None
+        selected_model_forecast = None
+        selected_model_direction = None
+
     if forecast_lgbm > last_known_price:
 
         direction = "UP"
@@ -857,6 +1059,13 @@ def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
             indent=2
         )
 
+    # Keep a rolling archive so the next run can evaluate
+    # yesterday's forecasts against yesterday's actual close.
+    archive_forecast(
+        pair_key,
+        result
+    )
+
     # ========================================================
     # SAVE LAST 60 DAYS
     # ========================================================
@@ -891,12 +1100,12 @@ def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
     print(
         f"[{datetime.now()}] "
         f"Forecast completed for {pair_key}. "
-        f"LightGBM -> "
-        f"{forecast_lgbm:.4f} "
-        f"({direction}) | "
-        f"Ridge -> {forecast_ridge:.4f} | "
-        f"Tree -> {forecast_tree:.4f} | "
-        f"MLP -> {forecast_mlp:.4f}"
+        f"Selected model -> "
+        f"{selected_model_key or 'pending'} | "
+        f"Next-day forecast -> "
+        f"{selected_model_forecast if selected_model_forecast is not None else 'pending'} | "
+        f"Random Walk benchmark -> "
+        f"{forecast_rw:.4f}"
     )
 
     return result
@@ -1135,12 +1344,36 @@ def refresh():
 )
 def refresh_cron():
 
-    results, errors = run_all_pairs()
+    requested_pair = request.args.get("pair")
 
+    if requested_pair:
+
+        pair_key = _resolve_pair_arg()
+
+        if pair_key is None:
+
+            return jsonify({
+                "error": f"Unknown pair '{requested_pair}'"
+            }), 400
+
+        try:
+
+            return jsonify(
+                run_forecast_pipeline(pair_key)
+            )
+
+        except Exception as e:
+
+            return jsonify({
+                "error": str(e)
+            }), 500
+
+    # Do not run all eight heavy pipelines in one request.
+    # The caller should invoke this endpoint once per pair.
     return jsonify({
-        "results": results,
-        "errors": errors
-    })
+        "message": "Provide ?pair=PAIR to refresh one FX pair.",
+        "pairs": list(PAIRS.keys())
+    }), 400
 
 
 # ============================================================
@@ -1186,24 +1419,8 @@ if os.environ.get(
 
 if __name__ == "__main__":
 
-    # Run once per pair at startup if no forecast exists yet.
-
-    for pair_key in PAIRS:
-
-        if not os.path.exists(
-            forecast_file_path(pair_key)
-        ):
-
-            try:
-
-                run_forecast_pipeline(pair_key)
-
-            except Exception as e:
-
-                print(
-                    f"Startup pipeline run failed for {pair_key}:",
-                    e
-                )
+    # Do not train all eight FX pairs at startup.
+    # Generate a pair only when its API endpoint is requested.
 
     port = int(
         os.environ.get(
