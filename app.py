@@ -29,6 +29,8 @@ HORIZON = 1
 DAYS_IN_YEAR = 365
 MLP_LOGRET_CLIP = 0.02
 SELECTION_WINDOW = 30
+ROLLING_WINDOW_DAYS = 7
+MIN_ROLLING_DAYS = 3
 DEFAULT_PAIR = "USDINR"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -164,6 +166,18 @@ def next_business_day(date_value):
 
 
 def stored_forecast_is_stale(pair_key):
+    """
+    A stored forecast is stale once "today" has reached or passed the
+    date it was predicting for -- at that point newer market data is
+    available and a fresh forecast should be generated.
+
+    NOTE: this used to recompute next_business_day() from the file's
+    own saved `latest_available_date` and compare that against the
+    file's own saved `forecast_date`. Since `forecast_date` was
+    originally derived from that same `actual_date`, the two values
+    were always identical and the check could never return True after
+    the first run. Comparing against the real current date fixes it.
+    """
     path = forecast_file_path(pair_key)
 
     if not os.path.exists(path):
@@ -174,14 +188,13 @@ def stored_forecast_is_stale(pair_key):
             saved = json.load(f)
 
         forecast_date = saved.get("forecast_date")
-        actual_date = saved.get("latest_available_date")
 
-        if not forecast_date or not actual_date:
+        if not forecast_date:
             return True
 
-        expected_date = next_business_day(actual_date)
+        today = pd.Timestamp.now().normalize()
 
-        return pd.Timestamp(forecast_date) < expected_date
+        return pd.Timestamp(forecast_date) <= today
 
     except Exception:
         return True
@@ -358,66 +371,122 @@ def archive_forecast(pair_key, result):
     )
 
 
-def select_model_from_previous_forecast(
+def select_model_rolling_window(
     pair_key,
-    actual_date,
-    actual_price
+    df,
+    window=ROLLING_WINDOW_DAYS,
+    min_days=MIN_ROLLING_DAYS
 ):
+    """
+    Picks the "best" model by averaging each model's absolute
+    forecasting error over the last `window` trading days that have
+    both an archived forecast AND a now-known actual price -- rather
+    than just comparing on the single most recent day.
+
+    A single day's error is noisy: a model can "win" purely by luck
+    on any given day. Averaging over a rolling window means a model
+    has to be consistently closer to actual, not just lucky once, to
+    get selected -- so the pick changes less often and is more
+    trustworthy day to day.
+
+    Returns None if fewer than `min_days` matched days are available
+    yet (e.g. the app is newly deployed), so the caller can fall back
+    to the walk-forward backtest instead.
+    """
+
     archive = load_forecast_archive(pair_key)
 
     if not archive:
         return None
 
-    candidates = [
-        item
-        for item in archive
-        if item.get("forecast_date") == actual_date
-    ]
+    # date string -> actual price, from the full price history
+    date_to_price = dict(
+        zip(
+            df["date"].dt.strftime("%Y-%m-%d"),
+            df["price"]
+        )
+    )
 
-    if not candidates:
-        return None
+    matched = []
 
-    previous = candidates[-1]
+    for item in archive:
 
-    errors = {}
+        forecast_date = item.get("forecast_date")
 
-    for model_key in FORECAST_MODEL_KEYS:
-        value = previous.get(model_key)
+        if forecast_date in date_to_price:
 
-        if value is None:
-            continue
-
-        try:
-            forecast_value = float(value)
-
-            errors[model_key] = abs(
-                actual_price - forecast_value
+            matched.append(
+                (
+                    forecast_date,
+                    item,
+                    float(date_to_price[forecast_date])
+                )
             )
 
-        except (TypeError, ValueError):
-            continue
+    if len(matched) < min_days:
+        return None
 
-    if not errors:
+    # Most recent `window` matched trading days
+    matched.sort(key=lambda entry: entry[0])
+    matched = matched[-window:]
+
+    errors = {
+        model_key: []
+        for model_key in FORECAST_MODEL_KEYS
+    }
+
+    for forecast_date, item, actual_price in matched:
+
+        for model_key in FORECAST_MODEL_KEYS:
+
+            value = item.get(model_key)
+
+            if value is None:
+                continue
+
+            try:
+
+                forecast_value = float(value)
+
+                errors[model_key].append(
+                    abs(actual_price - forecast_value)
+                )
+
+            except (TypeError, ValueError):
+                continue
+
+    mae = {}
+
+    for model_key, model_errors in errors.items():
+
+        if model_errors:
+            mae[model_key] = float(
+                np.mean(model_errors)
+            )
+
+    if not mae:
         return None
 
     selected_model_key = min(
-        errors,
-        key=errors.get
+        mae,
+        key=mae.get
     )
 
     return {
         "selected_model_key": selected_model_key,
         "selected_model_label": MODEL_LABELS[selected_model_key],
         "selected_model_error": round(
-            errors[selected_model_key],
+            mae[selected_model_key],
             6
         ),
-        "selected_model_actual_close": round(
-            actual_price,
-            6
+        "selection_method": (
+            f"{len(matched)}-day rolling MAE"
         ),
-        "selected_model_evaluated_date": actual_date,
-        "selection_method": "previous-day absolute error"
+        "selection_mae": {
+            key: round(value, 6)
+            for key, value in mae.items()
+        },
+        "rolling_window_days": len(matched)
     }
 
 
@@ -1103,21 +1172,14 @@ def run_forecast_pipeline(
         )
     )
 
-    actual_date_string = (
-        last_known_date.strftime(
-            "%Y-%m-%d"
-        )
-    )
-
-    previous_selection = (
-        select_model_from_previous_forecast(
+    rolling_selection = (
+        select_model_rolling_window(
             pair_key,
-            actual_date_string,
-            last_known_price
+            df
         )
     )
 
-    if previous_selection is None:
+    if rolling_selection is None:
         historical_selection = (
             historical_model_selection(
                 df,
@@ -1129,8 +1191,8 @@ def run_forecast_pipeline(
         historical_selection = None
 
     selection = (
-        previous_selection
-        if previous_selection is not None
+        rolling_selection
+        if rolling_selection is not None
         else historical_selection
     )
 
@@ -1313,19 +1375,10 @@ def run_forecast_pipeline(
                 else None
             ),
 
-        "selected_model_actual_close":
+        "rolling_window_days":
             (
                 selection.get(
-                    "selected_model_actual_close"
-                )
-                if selection is not None
-                else None
-            ),
-
-        "selected_model_evaluated_date":
-            (
-                selection.get(
-                    "selected_model_evaluated_date"
+                    "rolling_window_days"
                 )
                 if selection is not None
                 else None

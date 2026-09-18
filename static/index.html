@@ -273,6 +273,20 @@
             color: var(--muted);
         }
 
+        .selected-model-tag {
+            width: 100%;
+
+            font-family: 'Courier New', monospace;
+
+            font-size: 0.75rem;
+
+            letter-spacing: 0.06em;
+
+            text-transform: uppercase;
+
+            color: var(--brass);
+        }
+
         .direction-pill {
             font-family: 'Courier New', monospace;
 
@@ -317,7 +331,7 @@
         .panel-grid {
             display: grid;
 
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(2, 1fr);
 
             gap: 12px;
 
@@ -337,8 +351,28 @@
             vertical-align: middle;
         }
 
+        .selected-badge {
+            display: inline-block;
+            margin-left: 8px;
+            padding: 3px 7px;
+            border: 1px solid var(--brass);
+            border-radius: 999px;
+            font-family: 'Courier New', monospace;
+            font-size: 9px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            vertical-align: middle;
+            color: var(--brass);
+            background: var(--brass-soft);
+        }
+
         .benchmark-panel {
             border-style: dashed;
+        }
+
+        .selected-panel {
+            border-color: var(--brass);
+            box-shadow: 0 0 0 1px var(--brass), var(--shadow);
         }
 
         .panel {
@@ -590,14 +624,6 @@
            MOBILE
         ========================================================== */
 
-        @media (max-width: 850px) {
-
-            .panel-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-
-        }
-
         @media (max-width: 640px) {
 
             .panel-grid {
@@ -642,11 +668,11 @@
 
         <span>FX FORECAST DASHBOARD</span>
 
-        <span>PRIMARY MODELS: LIGHTGBM · RIDGE · DECISION TREE · MLP</span>
+        <span>DAILY MODEL SELECTION: LIGHTGBM · RIDGE · DECISION TREE · MLP · PPP · IRP</span>
 
         <span>
-            BENCHMARK: RANDOM WALK · OTHER MODELS: PPP · IRP · RIDGE ·
-            DECISION TREE · MLP
+            BENCHMARK: RANDOM WALK · BEST MODEL CHOSEN EACH DAY BY
+            WALK-FORWARD ACCURACY
         </span>
 
         <span>DAILY TRADING-DAY FORECAST</span>
@@ -748,6 +774,10 @@
 
         /* =========================================================
            MODEL DEFINITIONS
+
+           Every model the backend can select as the "best" model.
+           `key` must match the field name on the /api/predict
+           response (data[key]).
         ========================================================== */
 
         const MODELS = [
@@ -757,31 +787,7 @@
                 label: "LightGBM",
                 role: "model",
                 color: "#a9822f",
-                width: 2.5
-            },
-
-            {
-                key: "random_walk",
-                label: "Random Walk",
-                role: "benchmark",
-                color: "#6b6a5f",
-                width: 1.5
-            },
-
-            {
-                key: "ppp",
-                label: "PPP",
-                role: "model",
-                color: "#2f6d9f",
-                width: 1.5
-            },
-
-            {
-                key: "irp",
-                label: "IRP",
-                role: "model",
-                color: "#7a4fa0",
-                width: 1.5
+                note: "Machine-learning model"
             },
 
             {
@@ -789,7 +795,7 @@
                 label: "Ridge",
                 role: "model",
                 color: "#2f6d4f",
-                width: 1.5
+                note: "Linear machine-learning model"
             },
 
             {
@@ -797,7 +803,7 @@
                 label: "Decision Tree",
                 role: "model",
                 color: "#a1372f",
-                width: 1.5
+                note: "Small single-tree model"
             },
 
             {
@@ -805,7 +811,31 @@
                 label: "MLP",
                 role: "model",
                 color: "#c26b1f",
-                width: 1.5
+                note: "Tiny neural-network model"
+            },
+
+            {
+                key: "ppp",
+                label: "PPP",
+                role: "model",
+                color: "#2f6d9f",
+                note: "Purchasing Power Parity model"
+            },
+
+            {
+                key: "irp",
+                label: "IRP",
+                role: "model",
+                color: "#7a4fa0",
+                note: "Interest Rate Parity model"
+            },
+
+            {
+                key: "random_walk",
+                label: "Random Walk",
+                role: "benchmark",
+                color: "#6b6a5f",
+                note: "Benchmark · tomorrow = latest price"
             }
 
         ];
@@ -842,6 +872,74 @@
                 + Number(value).toFixed(
                     decimals === undefined ? 2 : decimals
                 )
+            );
+
+        }
+
+
+        /* =========================================================
+           SELECTED MODEL HELPERS
+
+           The backend picks a "best" model each day (see
+           selected_model_key / selected_model_forecast /
+           selected_model_direction / selected_model_label on the
+           /api/predict response) based on which model had the
+           lowest recent forecasting error. Early on -- before
+           enough history has accumulated -- the backend may not
+           have made a selection yet, so everything here falls
+           back to LightGBM.
+        ========================================================== */
+
+        function getSelectedModelKey(data) {
+
+            return data.selected_model_key || "lightgbm";
+
+        }
+
+        function getSelectedModelLabel(data) {
+
+            return data.selected_model_label || "LightGBM";
+
+        }
+
+        function getSelectedModelForecast(data) {
+
+            return (
+                data.selected_model_forecast !== null &&
+                data.selected_model_forecast !== undefined
+            )
+                ? data.selected_model_forecast
+                : data.lightgbm;
+
+        }
+
+        function getSelectedModelDirection(data) {
+
+            return (
+                data.selected_model_direction ||
+                data.lightgbm_direction
+            );
+
+        }
+
+        function getSelectedModelChangePercent(data) {
+
+            const forecast = getSelectedModelForecast(data);
+
+            if (
+                forecast === null ||
+                forecast === undefined ||
+                !data.latest_price
+            ) {
+
+                return null;
+
+            }
+
+            return (
+                (forecast - data.latest_price) /
+                data.latest_price *
+                100
             );
 
         }
@@ -905,7 +1003,7 @@
 
                 <span class="direction-pill ${cls}">
 
-                    ${arrow} ${direction}
+                    ${arrow} ${direction || "FLAT"}
 
                 </span>
 
@@ -1292,6 +1390,12 @@
             const baseCcy = data.base_ccy || "";
             const quoteCcy = data.quote_ccy || "";
 
+            const selectedKey = getSelectedModelKey(data);
+            const selectedLabel = getSelectedModelLabel(data);
+            const selectedForecast = getSelectedModelForecast(data);
+            const selectedDirection = getSelectedModelDirection(data);
+            const selectedChangePercent = getSelectedModelChangePercent(data);
+
             // Update chrome that depends on the selected pair
             document.title = pairLabel + " Tomorrow";
 
@@ -1306,6 +1410,9 @@
 
                 <!-- =================================================
                      RATE
+                     Headline number is whichever model the backend
+                     selected as best-performing (falls back to
+                     LightGBM if no selection has been made yet).
                 ================================================== -->
 
                 <div class="rate-block">
@@ -1314,7 +1421,7 @@
 
                         <div class="rate-figure">
 
-                            ${formatPrice(data.lightgbm, quoteCcy, 2)}
+                            ${formatPrice(selectedForecast, quoteCcy, 2)}
 
                         </div>
 
@@ -1330,9 +1437,20 @@
                     </span>
 
 
-                    ${pill(
-                        data.lightgbm_direction
-                    )}
+                    ${pill(selectedDirection)}
+
+
+                    <div class="selected-model-tag">
+
+                        Selected model: ${selectedLabel}
+
+                        ${
+                            data.selection_method
+                                ? " · " + data.selection_method
+                                : ""
+                        }
+
+                    </div>
 
 
                     <div class="as-of">
@@ -1346,16 +1464,21 @@
                         · expected move
 
                         ${
-                            Number(
-                                data.lightgbm_change_percent
-                            ) > 0
+                            selectedChangePercent !== null && selectedChangePercent > 0
                                 ? "+"
                                 : ""
                         }
 
-                        ${Number(
-                            data.lightgbm_change_percent
-                        ).toFixed(4)}%
+                        ${
+                            selectedChangePercent !== null
+                                ? selectedChangePercent.toFixed(4) + "%"
+                                : "n/a"
+                        }
+
+                        &nbsp; · &nbsp;
+
+                        Random Walk (benchmark):
+                        ${formatPrice(data.random_walk, quoteCcy, 4)}
 
                     </div>
 
@@ -1391,31 +1514,56 @@
 
                 <!-- =================================================
                      MODEL PANELS
+
+                     Every model the backend can select from is
+                     shown here, including Random Walk as a labeled
+                     benchmark. Whichever one the backend actually
+                     picked as best-performing gets a "Selected"
+                     badge and a highlighted border.
                 ================================================== -->
 
                 <div class="panel-grid">
 
+                    <!-- =============================================
+                         SELECTED MODEL
 
-                    <div class="panel hero-model">
+                         The other candidate models (Ridge, Decision
+                         Tree, MLP, PPP, IRP, LightGBM) still run and
+                         get scored against each other in the
+                         backend every day -- only the winner is
+                         surfaced here.
+                    ============================================== -->
+
+                    <div class="panel selected-panel">
 
                         <p class="label">
-                            LightGBM
+                            ${selectedLabel}
+                            <span class="selected-badge">Selected</span>
                         </p>
 
                         <p class="value">
 
-                            ${formatPrice(data.lightgbm, quoteCcy, 4)}
+                            ${formatPrice(selectedForecast, quoteCcy, 4)}
 
                         </p>
 
                         <p class="note">
 
-                            Machine-learning model
+                            Best-performing model
+                            ${
+                                data.selection_method
+                                    ? "(" + data.selection_method + ")"
+                                    : ""
+                            }
 
                         </p>
 
                     </div>
 
+
+                    <!-- =============================================
+                         RANDOM WALK BENCHMARK
+                    ============================================== -->
 
                     <div class="panel benchmark-panel">
 
@@ -1438,114 +1586,6 @@
 
                     </div>
 
-
-                    <div class="panel">
-
-                        <p class="label">
-                            PPP
-                        </p>
-
-                        <p class="value">
-
-                            ${formatPrice(data.ppp, quoteCcy, 4)}
-
-                        </p>
-
-                        <p class="note">
-
-                            Purchasing Power Parity model
-                            (${data.ppp_cpi_year})
-
-                        </p>
-
-                    </div>
-
-
-                    <div class="panel">
-
-                        <p class="label">
-                            IRP
-                        </p>
-
-                        <p class="value">
-
-                            ${formatPrice(data.irp, quoteCcy, 4)}
-
-                        </p>
-
-                        <p class="note">
-
-                            Interest Rate Parity model
-                            (${data.irp_rate_year})
-
-                        </p>
-
-                    </div>
-
-
-                    <div class="panel">
-
-                        <p class="label">
-                            Ridge
-                        </p>
-
-                        <p class="value">
-
-                            ${formatPrice(data.ridge, quoteCcy, 4)}
-
-                        </p>
-
-                        <p class="note">
-
-                            Linear machine-learning model
-
-                        </p>
-
-                    </div>
-
-
-                    <div class="panel">
-
-                        <p class="label">
-                            Decision Tree
-                        </p>
-
-                        <p class="value">
-
-                            ${formatPrice(data.decision_tree, quoteCcy, 4)}
-
-                        </p>
-
-                        <p class="note">
-
-                            Small single-tree model
-
-                        </p>
-
-                    </div>
-
-
-                    <div class="panel">
-
-                        <p class="label">
-                            MLP
-                        </p>
-
-                        <p class="value">
-
-                            ${formatPrice(data.mlp, quoteCcy, 4)}
-
-                        </p>
-
-                        <p class="note">
-
-                            Tiny neural-network model
-
-                        </p>
-
-                    </div>
-
-
                 </div>
 
 
@@ -1559,7 +1599,10 @@
                     <div class="chart-header">
 
                         <h2>
+
                             ${pairLabel} — Last 60 Trading Days
+                            · Best model: ${selectedLabel}
+
                         </h2>
 
 
@@ -1628,6 +1671,10 @@
 
                         &nbsp; · &nbsp;
 
+                        Bold dashed line = selected best model
+
+                        &nbsp; · &nbsp;
+
                         Click a legend name = Show/hide that model
 
                     </div>
@@ -1650,7 +1697,8 @@
             createInteractiveChart(
                 history,
                 data,
-                quoteCcy
+                quoteCcy,
+                selectedKey
             );
 
             const pairSelect =
@@ -1676,7 +1724,8 @@
         function createInteractiveChart(
             history,
             data,
-            quoteCcy
+            quoteCcy,
+            selectedKey
         ) {
 
             const canvas =
@@ -1815,12 +1864,34 @@
 
             /* =====================================================
                CREATE CHART
+
+               Every model in MODELS gets its own dashed forecast
+               line, including Random Walk. Whichever model matches
+               `selectedKey` (the backend's daily pick) is drawn
+               thicker with a larger endpoint marker so it stands
+               out from the rest.
             ====================================================== */
 
             try {
 
+                // Only the selected model's forecast line and the
+                // Random Walk benchmark are drawn -- the other
+                // candidate models still ran in the backend, they
+                // just aren't plotted individually here.
+                const chartModels =
+                    MODELS.filter(
+                        function (model) {
+
+                            return (
+                                model.key === selectedKey ||
+                                model.role === "benchmark"
+                            );
+
+                        }
+                    );
+
                 const forecastDatasets =
-                    MODELS.map(
+                    chartModels.map(
                         function (model) {
 
                             const series =
@@ -1828,6 +1899,8 @@
                                     data[model.key]
                                 );
 
+                            const isSelected =
+                                model.key === selectedKey;
 
                             return {
 
@@ -1835,7 +1908,7 @@
                                     model.label +
                                     (model.role === "benchmark"
                                         ? " benchmark"
-                                        : " forecast"),
+                                        : " forecast (selected)"),
 
                                 data:
                                     series,
@@ -1847,7 +1920,7 @@
                                     model.color,
 
                                 borderWidth:
-                                    model.width,
+                                    isSelected ? 3 : 1.5,
 
                                 borderDash: [
                                     6,
@@ -1860,8 +1933,8 @@
                                         return context.dataIndex
                                             === forecastSeriesLength - 1
                                             ? (
-                                                model.key === "lightgbm"
-                                                    ? 6
+                                                isSelected
+                                                    ? 7
                                                     : 4
                                             )
                                             : 0;
@@ -2369,6 +2442,12 @@
                    STATUS
                 ================================================== */
 
+                const selectedLabelForStatus =
+                    getSelectedModelLabel(data);
+
+                const selectedForecastForStatus =
+                    getSelectedModelForecast(data);
+
                 status.textContent =
 
                     history.length
@@ -2379,9 +2458,13 @@
                     +
                     formatPrice(data.latest_price, quoteCcy, 4)
                     +
-                    " · LightGBM forecast: "
+                    " · Selected model ("
                     +
-                    formatPrice(data.lightgbm, quoteCcy, 4)
+                    selectedLabelForStatus
+                    +
+                    ") forecast: "
+                    +
+                    formatPrice(selectedForecastForStatus, quoteCcy, 4)
                     +
                     " for "
                     +
