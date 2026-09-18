@@ -19,6 +19,7 @@ from sklearn.preprocessing import StandardScaler
 from flask import Flask, jsonify, send_from_directory, request
 from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
+import threading
 
 
 RANDOM_STATE = 42
@@ -28,7 +29,18 @@ MIN_TRAIN_DAYS = 500
 HORIZON = 1
 DAYS_IN_YEAR = 365
 MLP_LOGRET_CLIP = 0.02
-SELECTION_WINDOW = 30
+
+# historical_model_selection() retrains LightGBM, Ridge, Decision
+# Tree and MLP once per day in this window (a walk-forward
+# backtest), only used as a fallback for a pair that doesn't yet
+# have enough archived same-day forecasts for the cheap rolling-MAE
+# path. At 30 this meant up to ~120 model fits in a single request
+# -- 60s+ on Render's free tier. 10 keeps the backtest meaningful
+# while cutting that cost roughly 3x. This path should also become
+# rare in practice once ENABLE_SCHEDULER keeps every pair's archive
+# populated ahead of user requests.
+SELECTION_WINDOW = 10
+
 ROLLING_WINDOW_DAYS = 7
 MIN_ROLLING_DAYS = 3
 DEFAULT_PAIR = "USDINR"
@@ -200,6 +212,55 @@ def stored_forecast_is_stale(pair_key):
         return True
 
 
+# ============================================================
+# PER-PAIR PIPELINE LOCKS
+#
+# The frontend fires /api/predict and /api/history at the same
+# time (Promise.all). Both routes used to independently check
+# stored_forecast_is_stale() and independently call
+# run_forecast_pipeline() when stale -- so on a cold pair, two
+# full pipelines (yfinance download + 2 World Bank calls + 4
+# model trainings, each) ran at once, competing for CPU on a
+# single-core free instance right when it's also cold-booting.
+# That's enough to blow well past a 45s client timeout, which
+# is why this showed up worst on mobile.
+#
+# ensure_fresh_forecast() below serializes refreshes per pair:
+# the second caller blocks on the lock instead of duplicating
+# the work, then re-checks staleness (the first caller already
+# refreshed it) before deciding whether to run again.
+# ============================================================
+
+_pipeline_locks = {}
+_pipeline_locks_guard = threading.Lock()
+
+
+def get_pipeline_lock(pair_key):
+
+    with _pipeline_locks_guard:
+
+        if pair_key not in _pipeline_locks:
+            _pipeline_locks[pair_key] = threading.Lock()
+
+        return _pipeline_locks[pair_key]
+
+
+def ensure_fresh_forecast(pair_key):
+
+    if not stored_forecast_is_stale(pair_key):
+        return
+
+    lock = get_pipeline_lock(pair_key)
+
+    with lock:
+
+        # Re-check after acquiring the lock -- if another request
+        # for this pair got here first and already refreshed it,
+        # there's nothing left to do.
+        if stored_forecast_is_stale(pair_key):
+            run_forecast_pipeline(pair_key)
+
+
 def get_world_bank_indicator(country, indicator):
     url = (
         f"https://api.worldbank.org/v2/country/"
@@ -307,12 +368,17 @@ def create_tree_model():
 
 
 def create_mlp_model():
+    # max_iter dropped from 5000 to 500: with the lbfgs solver on
+    # a small (8-unit) hidden layer this converges well within a
+    # few hundred iterations in practice, so 5000 was mostly wasted
+    # compute -- especially costly since this model gets refit
+    # SELECTION_WINDOW times during a walk-forward backtest.
     return MLPRegressor(
         hidden_layer_sizes=(8,),
         activation="relu",
         solver="lbfgs",
         alpha=0.01,
-        max_iter=5000,
+        max_iter=500,
         random_state=RANDOM_STATE
     )
 
@@ -1546,21 +1612,17 @@ def predict():
         pair_key
     )
 
-    if stored_forecast_is_stale(
-        pair_key
-    ):
+    try:
 
-        try:
+        ensure_fresh_forecast(
+            pair_key
+        )
 
-            run_forecast_pipeline(
-                pair_key
-            )
+    except Exception as e:
 
-        except Exception as e:
-
-            return jsonify({
-                "error": str(e)
-            }), 500
+        return jsonify({
+            "error": str(e)
+        }), 500
 
     try:
 
@@ -1595,21 +1657,17 @@ def history():
         pair_key
     )
 
-    if stored_forecast_is_stale(
-        pair_key
-    ):
+    try:
 
-        try:
+        ensure_fresh_forecast(
+            pair_key
+        )
 
-            run_forecast_pipeline(
-                pair_key
-            )
+    except Exception as e:
 
-        except Exception as e:
-
-            return jsonify({
-                "error": str(e)
-            }), 500
+        return jsonify({
+            "error": str(e)
+        }), 500
 
     try:
 
