@@ -7,7 +7,7 @@ warnings.filterwarnings("ignore")
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -167,6 +167,53 @@ def forecast_archive_file_path(pair_key):
         BASE_DIR,
         f"forecast_archive_{pair_key}.json"
     )
+
+
+# ============================================================
+# FORECAST DATE / STALE FORECAST HELPERS
+# ============================================================
+
+def next_business_day(date_value):
+    """
+    Return the next weekday after date_value.
+    For 2026-09-18 (Friday), this returns 2026-09-21 (Monday).
+    """
+    ts = pd.Timestamp(date_value)
+    next_day = ts + pd.Timedelta(days=1)
+
+    while next_day.weekday() >= 5:
+        next_day += pd.Timedelta(days=1)
+
+    return next_day
+
+
+def stored_forecast_is_stale(pair_key):
+    """
+    A saved forecast is stale when its forecast date is before the
+    next weekday from today. This prevents an old JSON file such as
+    2026-09-09 from being served indefinitely.
+    """
+    path = forecast_file_path(pair_key)
+
+    if not os.path.exists(path):
+        return True
+
+    try:
+        with open(path, encoding="utf-8") as f:
+            saved = json.load(f)
+
+        saved_date = saved.get("forecast_date")
+
+        if not saved_date:
+            return True
+
+        today = pd.Timestamp.now().normalize()
+        expected_date = next_business_day(today)
+
+        return pd.Timestamp(saved_date) < expected_date
+
+    except Exception:
+        return True
 
 
 # ============================================================
@@ -921,10 +968,7 @@ def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
 
     forecast_rw = last_known_price
 
-    forecast_date = (
-        last_known_date
-        + pd.tseries.offsets.BDay(1)
-    )
+    forecast_date = next_business_day(last_known_date)
 
     # Compare the previous day's six model forecasts with today's
     # actual close. Random Walk is deliberately excluded.
@@ -1041,6 +1085,47 @@ def run_forecast_pipeline(pair_key=DEFAULT_PAIR):
 
         "lightgbm_direction":
             direction,
+
+        "selected_model_key":
+            selected_model_key,
+
+        "selected_model_label":
+            (
+                previous_selection["selected_model_label"]
+                if previous_selection is not None
+                else None
+            ),
+
+        "selected_model_forecast":
+            (
+                round(selected_model_forecast, 4)
+                if selected_model_forecast is not None
+                else None
+            ),
+
+        "selected_model_direction":
+            selected_model_direction,
+
+        "selected_model_error":
+            (
+                previous_selection["selected_model_error"]
+                if previous_selection is not None
+                else None
+            ),
+
+        "selected_model_actual_close":
+            (
+                previous_selection["selected_model_actual_close"]
+                if previous_selection is not None
+                else None
+            ),
+
+        "selected_model_evaluated_date":
+            (
+                previous_selection["selected_model_evaluated_date"]
+                if previous_selection is not None
+                else None
+            ),
 
         "generated_at":
             datetime.now().isoformat()
@@ -1213,7 +1298,10 @@ def predict():
 
     path = forecast_file_path(pair_key)
 
-    if not os.path.exists(path):
+    # Do not serve an old saved forecast indefinitely.
+    # Example: a saved 2026-09-09 forecast must be regenerated
+    # when the current expected next weekday is 2026-09-21.
+    if stored_forecast_is_stale(pair_key):
 
         try:
 
@@ -1260,7 +1348,9 @@ def history():
 
     path = history_file_path(pair_key)
 
-    if not os.path.exists(path):
+    # Refresh the pair when its saved forecast is stale so the
+    # historical closing-rate data is updated as well.
+    if stored_forecast_is_stale(pair_key):
 
         try:
 
@@ -1396,8 +1486,11 @@ if os.environ.get(
         timezone="Asia/Kolkata"
     )
 
+    # Keep this disabled on Render unless you deliberately want
+    # the in-process scheduler. The public refresh-cron endpoint
+    # is designed to refresh one pair at a time.
     scheduler.add_job(
-        run_all_pairs,
+        lambda: run_forecast_pipeline(DEFAULT_PAIR),
         "cron",
         day_of_week="mon-fri",
         hour=18,
