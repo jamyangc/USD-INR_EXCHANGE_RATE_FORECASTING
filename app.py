@@ -1731,6 +1731,18 @@ def refresh_cron():
         }), 500
 
 
+# ============================================================
+# BACKGROUND SCHEDULER
+#
+# NOTE: this used to only pre-warm DEFAULT_PAIR ("USDINR"), so
+# every other pair in PAIRS (USDJPY, USDCHF, USDCAD, EURUSD,
+# GBPUSD, AUDUSD, NZDUSD) still computed cold inside whichever
+# user's request happened to find it stale -- exactly the slow
+# path this scheduler exists to avoid. refresh_all_pairs() now
+# walks every configured pair so the JSON cache is warm for all
+# of them, not just the default.
+# ============================================================
+
 scheduler = None
 
 if (
@@ -1743,16 +1755,30 @@ if (
     == "true"
 ):
 
+    def refresh_all_pairs():
+
+        for pair_key in PAIRS:
+
+            try:
+
+                run_forecast_pipeline(
+                    pair_key
+                )
+
+            except Exception as e:
+
+                print(
+                    f"Scheduled refresh failed for "
+                    f"{pair_key}: {e}"
+                )
+
     scheduler = BackgroundScheduler(
         timezone="Asia/Kolkata"
     )
 
     scheduler.add_job(
 
-        lambda:
-            run_forecast_pipeline(
-                DEFAULT_PAIR
-            ),
+        refresh_all_pairs,
 
         "cron",
 

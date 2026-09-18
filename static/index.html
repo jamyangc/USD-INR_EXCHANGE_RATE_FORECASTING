@@ -759,7 +759,14 @@
         // Either way, plain fetch() has NO built-in timeout -- it
         // will hang forever with no error, which is why the app can
         // appear to just never open. FETCH_TIMEOUT_MS bounds that.
-        const FETCH_TIMEOUT_MS = 20000;
+        //
+        // A cold Render instance has to boot Python, load the ML
+        // libraries, then (if the cached forecast is stale) run the
+        // full pipeline: a yfinance download plus two World Bank API
+        // calls plus training four models. That routinely takes
+        // 30-60s+ on the free tier, so a 20s timeout was firing
+        // before the very first request had a real chance to finish.
+        const FETCH_TIMEOUT_MS = 45000;
 
         // Shown if a request is still pending after this long, so
         // the user sees *something* instead of a static "Fetching…"
