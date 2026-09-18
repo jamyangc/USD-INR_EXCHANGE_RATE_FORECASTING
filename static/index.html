@@ -642,10 +642,11 @@
 
         <span>FX FORECAST DASHBOARD</span>
 
-        <span>DAILY SELECTED MODEL + RANDOM WALK BENCHMARK</span>
+        <span>PRIMARY MODELS: LIGHTGBM · RIDGE · DECISION TREE · MLP</span>
 
         <span>
-            ALL MODELS RUN IN THE BACKEND · ONLY THE BEST MODEL IS DISPLAYED
+            BENCHMARK: RANDOM WALK · OTHER MODELS: PPP · IRP · RIDGE ·
+            DECISION TREE · MLP
         </span>
 
         <span>DAILY TRADING-DAY FORECAST</span>
@@ -872,144 +873,6 @@
         ========================================================== */
 
         const PAIRS_LIST_STORAGE_KEY = "fx_pairs_list";
-
-        /* =========================================================
-           DAILY MODEL SELECTION
-
-           All non-benchmark models are still calculated by the
-           backend. The dashboard displays only the model that was
-           closest to the actual end-of-day close for the previous
-           forecast day. Random Walk is always displayed separately
-           as the benchmark.
-
-           Example:
-           - Monday forecast for Tuesday is saved.
-           - Tuesday's actual close becomes available.
-           - The app compares Monday's six model forecasts with
-             Tuesday's actual close.
-           - The smallest absolute error becomes Tuesday's selected
-             model for the next dashboard forecast.
-        ========================================================== */
-
-        const FORECAST_MODEL_KEYS = [
-            "lightgbm",
-            "ppp",
-            "irp",
-            "ridge",
-            "decision_tree",
-            "mlp"
-        ];
-
-        const MODEL_LABELS = {
-            lightgbm: "LightGBM",
-            ppp: "PPP",
-            irp: "IRP",
-            ridge: "Ridge",
-            decision_tree: "Decision Tree",
-            mlp: "MLP"
-        };
-
-        function getModelLabel(modelKey) {
-
-            return MODEL_LABELS[modelKey] || modelKey;
-
-        }
-
-        function findActualForForecastDate(history, forecastDate) {
-
-            if (!Array.isArray(history) || !forecastDate) {
-                return null;
-            }
-
-            const match = history.find(function (item) {
-
-                return String(item.date) === String(forecastDate);
-
-            });
-
-            if (!match || !Number.isFinite(Number(match.price))) {
-                return null;
-            }
-
-            return Number(match.price);
-
-        }
-
-        function evaluatePreviousForecast(previousForecast, history) {
-
-            if (!previousForecast) {
-                return null;
-            }
-
-            const forecastDate = previousForecast.forecast_date;
-
-            const actualClose = findActualForForecastDate(
-                history,
-                forecastDate
-            );
-
-            if (actualClose === null) {
-                return null;
-            }
-
-            let bestKey = null;
-            let bestError = Infinity;
-
-            FORECAST_MODEL_KEYS.forEach(function (key) {
-
-                const prediction = Number(previousForecast[key]);
-
-                if (!Number.isFinite(prediction)) {
-                    return;
-                }
-
-                const error = Math.abs(
-                    prediction - actualClose
-                );
-
-                if (error < bestError) {
-
-                    bestError = error;
-                    bestKey = key;
-
-                }
-
-            });
-
-            if (!bestKey) {
-                return null;
-            }
-
-            return {
-                key: bestKey,
-                label: getModelLabel(bestKey),
-                error: bestError,
-                actualClose: actualClose,
-                evaluatedDate: forecastDate
-            };
-
-        }
-
-        function getSelectedModel(data) {
-
-            const key =
-                data && data.selected_model_key;
-
-            if (
-                key &&
-                FORECAST_MODEL_KEYS.includes(key) &&
-                Number.isFinite(Number(data[key]))
-            ) {
-                return {
-                    key: key,
-                    label: getModelLabel(key)
-                };
-            }
-
-            return null;
-
-        }
-
 
 
         /* =========================================================
@@ -1295,69 +1158,6 @@
             history = await historyRes.json();
         }
 
-        /*
-         * Evaluate the forecast that was saved on the previous
-         * successful visit. Its forecast date should now have an
-         * actual closing price in history.
-         */
-        const previousSavedRaw =
-            localStorage.getItem(
-                forecastStorageKey(pair)
-            );
-
-        let previousSavedData = null;
-
-        if (previousSavedRaw) {
-
-            try {
-                previousSavedData = JSON.parse(previousSavedRaw);
-            }
-            catch (parseError) {
-                console.warn(
-                    "Previous forecast could not be parsed:",
-                    parseError
-                );
-            }
-
-        }
-
-        const evaluatedPrevious =
-            evaluatePreviousForecast(
-                previousSavedData,
-                history
-            );
-
-        /*
-         * The backend can optionally provide selected_model_key.
-         * When it does not, the app uses the previous forecast
-         * evaluation above. This keeps the backend models unchanged
-         * while making the display decision dynamically.
-         */
-        if (evaluatedPrevious) {
-
-            data.selected_model_key =
-                evaluatedPrevious.key;
-
-            data.selected_model_label =
-                evaluatedPrevious.label;
-
-            data.selected_model_error =
-                evaluatedPrevious.error;
-
-            data.selected_model_actual_close =
-                evaluatedPrevious.actualClose;
-
-            data.selected_model_evaluated_date =
-                evaluatedPrevious.evaluatedDate;
-
-        }
-
-        /*
-         * If the backend already supplies a valid selected model,
-         * keep it. Otherwise the value remains absent until a
-         * completed forecast cycle can be evaluated.
-         */
-
         // Save successful forecast data in the browser,
         // namespaced per pair. This becomes our offline backup.
         localStorage.setItem(
@@ -1492,33 +1292,6 @@
             const baseCcy = data.base_ccy || "";
             const quoteCcy = data.quote_ccy || "";
 
-            const selectedModel =
-                getSelectedModel(data);
-
-            const selectedModelKey =
-                selectedModel
-                    ? selectedModel.key
-                    : null;
-
-            const selectedModelLabel =
-                selectedModel
-                    ? selectedModel.label
-                    : "Best model pending";
-
-            const selectedForecastValue =
-                selectedModel
-                    ? Number(data[selectedModelKey])
-                    : Number(data.random_walk);
-
-            const selectedDirection =
-                selectedModel
-                    ? (
-                        data[selectedModelKey + "_direction"]
-                        || data.lightgbm_direction
-                        || "FLAT"
-                    )
-                    : "FLAT";
-
             // Update chrome that depends on the selected pair
             document.title = pairLabel + " Tomorrow";
 
@@ -1541,7 +1314,7 @@
 
                         <div class="rate-figure">
 
-                            ${formatPrice(selectedForecastValue, quoteCcy, 2)}
+                            ${formatPrice(data.lightgbm, quoteCcy, 2)}
 
                         </div>
 
@@ -1558,7 +1331,7 @@
 
 
                     ${pill(
-                        selectedDirection
+                        data.lightgbm_direction
                     )}
 
 
@@ -1574,19 +1347,15 @@
 
                         ${
                             Number(
-                                data[selectedModelKey + "_change_percent"]
+                                data.lightgbm_change_percent
                             ) > 0
                                 ? "+"
                                 : ""
                         }
 
-                        ${
-                            selectedModel
-                                ? Number(
-                                    data[selectedModelKey + "_change_percent"]
-                                ).toFixed(4)
-                                : "n/a"
-                        }%
+                        ${Number(
+                            data.lightgbm_change_percent
+                        ).toFixed(4)}%
 
                     </div>
 
@@ -1626,66 +1395,27 @@
 
                 <div class="panel-grid">
 
-                    ${
-                        selectedModel
-                            ? `
-                                <div class="panel hero-model">
 
-                                    <p class="label">
-                                        ${selectedModelLabel}
-                                        <span class="benchmark-badge">Selected</span>
-                                    </p>
+                    <div class="panel hero-model">
 
-                                    <p class="value">
-                                        ${formatPrice(
-                                            selectedForecastValue,
-                                            quoteCcy,
-                                            4
-                                        )}
-                                    </p>
+                        <p class="label">
+                            LightGBM
+                        </p>
 
-                                    <p class="note">
-                                        Closest model to the most recent
-                                        available end-of-day close
-                                    </p>
+                        <p class="value">
 
-                                    ${
-                                        Number.isFinite(
-                                            Number(data.selected_model_error)
-                                        )
-                                            ? `
-                                                <p class="note">
-                                                    Previous absolute error:
-                                                    ${Number(
-                                                        data.selected_model_error
-                                                    ).toFixed(4)}
-                                                </p>
-                                            `
-                                            : ""
-                                    }
+                            ${formatPrice(data.lightgbm, quoteCcy, 4)}
 
-                                </div>
-                            `
-                            : `
-                                <div class="panel hero-model">
+                        </p>
 
-                                    <p class="label">
-                                        Best model
-                                    </p>
+                        <p class="note">
 
-                                    <p class="value">
-                                        Pending
-                                    </p>
+                            Machine-learning model
 
-                                    <p class="note">
-                                        The first model winner will appear
-                                        after an actual closing rate is
-                                        available for a completed forecast.
-                                    </p>
+                        </p>
 
-                                </div>
-                            `
-                    }
+                    </div>
+
 
                     <div class="panel benchmark-panel">
 
@@ -1695,20 +1425,129 @@
                         </p>
 
                         <p class="value">
-                            ${formatPrice(
-                                data.random_walk,
-                                quoteCcy,
-                                4
-                            )}
+
+                            ${formatPrice(data.random_walk, quoteCcy, 4)}
+
                         </p>
 
                         <p class="note">
+
                             Benchmark · tomorrow = latest price
+
                         </p>
 
                     </div>
 
+
+                    <div class="panel">
+
+                        <p class="label">
+                            PPP
+                        </p>
+
+                        <p class="value">
+
+                            ${formatPrice(data.ppp, quoteCcy, 4)}
+
+                        </p>
+
+                        <p class="note">
+
+                            Purchasing Power Parity model
+                            (${data.ppp_cpi_year})
+
+                        </p>
+
+                    </div>
+
+
+                    <div class="panel">
+
+                        <p class="label">
+                            IRP
+                        </p>
+
+                        <p class="value">
+
+                            ${formatPrice(data.irp, quoteCcy, 4)}
+
+                        </p>
+
+                        <p class="note">
+
+                            Interest Rate Parity model
+                            (${data.irp_rate_year})
+
+                        </p>
+
+                    </div>
+
+
+                    <div class="panel">
+
+                        <p class="label">
+                            Ridge
+                        </p>
+
+                        <p class="value">
+
+                            ${formatPrice(data.ridge, quoteCcy, 4)}
+
+                        </p>
+
+                        <p class="note">
+
+                            Linear machine-learning model
+
+                        </p>
+
+                    </div>
+
+
+                    <div class="panel">
+
+                        <p class="label">
+                            Decision Tree
+                        </p>
+
+                        <p class="value">
+
+                            ${formatPrice(data.decision_tree, quoteCcy, 4)}
+
+                        </p>
+
+                        <p class="note">
+
+                            Small single-tree model
+
+                        </p>
+
+                    </div>
+
+
+                    <div class="panel">
+
+                        <p class="label">
+                            MLP
+                        </p>
+
+                        <p class="value">
+
+                            ${formatPrice(data.mlp, quoteCcy, 4)}
+
+                        </p>
+
+                        <p class="note">
+
+                            Tiny neural-network model
+
+                        </p>
+
+                    </div>
+
+
                 </div>
+
 
                 <!-- =================================================
                      INTERACTIVE CHART
@@ -1789,7 +1628,7 @@
 
                         &nbsp; · &nbsp;
 
-                        Only the selected model and benchmark are displayed
+                        Click a legend name = Show/hide that model
 
                     </div>
 
@@ -1980,32 +1819,8 @@
 
             try {
 
-                const visibleModels = [];
-
-                if (selectedModel) {
-
-                    const selectedDefinition =
-                        MODELS.find(function (model) {
-                            return model.key === selectedModelKey;
-                        });
-
-                    if (selectedDefinition) {
-                        visibleModels.push(selectedDefinition);
-                    }
-
-                }
-
-                const randomWalkDefinition =
-                    MODELS.find(function (model) {
-                        return model.key === "random_walk";
-                    });
-
-                if (randomWalkDefinition) {
-                    visibleModels.push(randomWalkDefinition);
-                }
-
                 const forecastDatasets =
-                    visibleModels.map(
+                    MODELS.map(
                         function (model) {
 
                             const series =
@@ -2013,12 +1828,14 @@
                                     data[model.key]
                                 );
 
+
                             return {
 
                                 label:
-                                    model.key === "random_walk"
-                                        ? "Random Walk benchmark"
-                                        : model.label + " selected forecast",
+                                    model.label +
+                                    (model.role === "benchmark"
+                                        ? " benchmark"
+                                        : " forecast"),
 
                                 data:
                                     series,
@@ -2042,7 +1859,11 @@
 
                                         return context.dataIndex
                                             === forecastSeriesLength - 1
-                                            ? 5
+                                            ? (
+                                                model.key === "lightgbm"
+                                                    ? 6
+                                                    : 4
+                                            )
                                             : 0;
 
                                     },
@@ -2558,29 +2379,9 @@
                     +
                     formatPrice(data.latest_price, quoteCcy, 4)
                     +
-                    " · "
+                    " · LightGBM forecast: "
                     +
-                    (
-                        selectedModel
-                            ? selectedModelLabel + " selected: "
-                            : "Best model pending · "
-                    )
-                    +
-                    (
-                        selectedModel
-                            ? formatPrice(
-                                selectedForecastValue,
-                                quoteCcy,
-                                4
-                            )
-                            : "Random Walk benchmark: "
-                            +
-                            formatPrice(
-                                data.random_walk,
-                                quoteCcy,
-                                4
-                            )
-                    )
+                    formatPrice(data.lightgbm, quoteCcy, 4)
                     +
                     " for "
                     +
