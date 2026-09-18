@@ -754,6 +754,19 @@
         // Render backend used by the Android app and web dashboard.
         const API_BASE = "https://usd-inr-exchange-rate-forecasting.onrender.com";
 
+        // Render's free tier can cold-start (server was asleep) or
+        // the forecast pipeline can be mid-run when a request lands.
+        // Either way, plain fetch() has NO built-in timeout -- it
+        // will hang forever with no error, which is why the app can
+        // appear to just never open. FETCH_TIMEOUT_MS bounds that.
+        const FETCH_TIMEOUT_MS = 20000;
+
+        // Shown if a request is still pending after this long, so
+        // the user sees *something* instead of a static "Fetching…"
+        // message that looks identical whether it'll finish in
+        // 2 seconds or never.
+        const SLOW_NOTICE_MS = 6000;
+
         let fxChart = null;
 
         let currentPair = "USDINR";
@@ -771,6 +784,64 @@
 
         const headline =
             document.getElementById("headline");
+
+
+        /* =========================================================
+           FETCH WITH TIMEOUT
+
+           Wraps fetch() with AbortController so a slow or hung
+           backend (cold start, mid-pipeline-run, dropped connection)
+           fails after FETCH_TIMEOUT_MS instead of hanging forever.
+           Same signature as fetch() -- drop-in replacement.
+        ========================================================== */
+
+        async function fetchWithTimeout(url, options) {
+
+            const controller = new AbortController();
+
+            const timeoutId = setTimeout(
+                function () {
+                    controller.abort();
+                },
+                FETCH_TIMEOUT_MS
+            );
+
+            try {
+
+                return await fetch(
+                    url,
+                    Object.assign(
+                        {},
+                        options,
+                        { signal: controller.signal }
+                    )
+                );
+
+            }
+
+            catch (error) {
+
+                if (error.name === "AbortError") {
+
+                    throw new Error(
+                        "Request timed out after " +
+                        (FETCH_TIMEOUT_MS / 1000) +
+                        "s -- the server may be starting up."
+                    );
+
+                }
+
+                throw error;
+
+            }
+
+            finally {
+
+                clearTimeout(timeoutId);
+
+            }
+
+        }
 
         /* =========================================================
            MODEL DEFINITIONS
@@ -1029,7 +1100,7 @@
 
             try {
 
-                const res = await fetch(
+                const res = await fetchWithTimeout(
                     `${API_BASE}/api/pairs`,
                     { cache: "no-store" }
                 );
@@ -1145,12 +1216,12 @@
 
                     const results = await Promise.all([
 
-                        fetch(
+                        fetchWithTimeout(
                             `${API_BASE}/api/predict?pair=${p.key}`,
                             { cache: "no-store" }
                         ),
 
-                        fetch(
+                        fetchWithTimeout(
                             `${API_BASE}/api/history?pair=${p.key}`,
                             { cache: "no-store" }
                         )
@@ -1234,18 +1305,40 @@
 
     const pair = currentPair;
 
+    // If the request is still pending after SLOW_NOTICE_MS, tell
+    // the user why -- otherwise "Fetching today's numbers…" looks
+    // identical whether it resolves in 2 seconds or times out.
+    const slowNoticeTimer = setTimeout(
+        function () {
+
+            if (content.className === "loading") {
+
+                content.innerHTML =
+                    "Fetching today's numbers… " +
+                    "<br><br>" +
+                    "<small>Still working \u2014 the server may be " +
+                    "starting up. This can take up to " +
+                    (FETCH_TIMEOUT_MS / 1000) +
+                    "s.</small>";
+
+            }
+
+        },
+        SLOW_NOTICE_MS
+    );
+
     try {
 
         const results = await Promise.all([
-            fetch(`${API_BASE}/api/predict?pair=${pair}`, { cache: "no-store" }),
-            fetch(`${API_BASE}/api/history?pair=${pair}`, { cache: "no-store" })
+            fetchWithTimeout(`${API_BASE}/api/predict?pair=${pair}`, { cache: "no-store" }),
+            fetchWithTimeout(`${API_BASE}/api/history?pair=${pair}`, { cache: "no-store" })
         ]);
 
         const predictRes = results[0];
         const historyRes = results[1];
 
         if (!predictRes.ok) {
-            throw new Error("Forecast API failed");
+            throw new Error("Forecast API failed (" + predictRes.status + ")");
         }
 
         const data = await predictRes.json();
@@ -1354,8 +1447,22 @@
 
             <br><br>
 
-            Please connect to the internet once
-            so the latest forecast can be saved.
+            ${
+                error.message && error.message.indexOf("timed out") !== -1
+                    ? "The server took too long to respond \u2014 it may be starting up after being idle. This is common on the first request after a while."
+                    : "Please connect to the internet once so the latest forecast can be saved."
+            }
+
+            <br><br>
+
+            <button
+                class="chart-btn"
+                id="retryLoadBtn"
+                type="button">
+
+                Retry
+
+            </button>
 
             <br><br>
 
@@ -1369,6 +1476,29 @@
             syncStatus.textContent =
                 "· offline (no saved data yet)";
         }
+
+        const retryBtn =
+            document.getElementById("retryLoadBtn");
+
+        if (retryBtn) {
+
+            retryBtn.onclick = function () {
+
+                content.className = "loading";
+
+                content.innerHTML = "Fetching today's numbers…";
+
+                loadDashboard();
+
+            };
+
+        }
+
+    }
+
+    finally {
+
+        clearTimeout(slowNoticeTimer);
 
     }
 
