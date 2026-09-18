@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
-import lightgbm as lgb
 
 from sklearn.linear_model import Ridge
 from sklearn.tree import DecisionTreeRegressor
@@ -35,12 +34,12 @@ MLP_LOGRET_CLIP = 0.02
 # Tree and MLP once per day in this window (a walk-forward
 # backtest), only used as a fallback for a pair that doesn't yet
 # have enough archived same-day forecasts for the cheap rolling-MAE
-# path. At 30 this meant up to ~120 model fits in a single request
-# -- 60s+ on Render's free tier. 10 keeps the backtest meaningful
-# while cutting that cost roughly 3x. This path should also become
-# rare in practice once ENABLE_SCHEDULER keeps every pair's archive
-# populated ahead of user requests.
-SELECTION_WINDOW = 10
+# path. At 30 this meant up to ~120 model fits in a single request.
+# Dropped further to 5 after 10 still triggered OOM kills on
+# Render's free 512MB tier -- each fit's peak memory matters less
+# here than simply how many times these libraries' internals
+# allocate and (hopefully) release memory in a row.
+SELECTION_WINDOW = 5
 
 ROLLING_WINDOW_DAYS = 7
 MIN_ROLLING_DAYS = 3
@@ -129,7 +128,6 @@ PAIRS = {
 }
 
 FORECAST_MODEL_KEYS = [
-    "lightgbm",
     "ridge",
     "decision_tree",
     "mlp",
@@ -138,7 +136,6 @@ FORECAST_MODEL_KEYS = [
 ]
 
 MODEL_LABELS = {
-    "lightgbm": "LightGBM",
     "ridge": "Ridge",
     "decision_tree": "Decision Tree",
     "mlp": "MLP",
@@ -339,27 +336,14 @@ def build_features(df):
     return df
 
 
-def create_model():
-    # n_jobs was -1 (use every CPU core). On a shared/limited host
-    # like Render's free tier, each thread carries its own working
-    # memory for tree-building, so more threads means more peak RAM
-    # for no real speed win at this data size -- n_jobs=1 trades a
-    # bit of wall-clock time for a much smaller memory footprint.
-    # n_estimators trimmed from 300 to 150 for the same reason: this
-    # model gets refit from scratch on every walk-forward backtest
-    # day (see historical_model_selection), so its per-fit cost is
-    # what actually matters for staying under the memory ceiling.
-    return lgb.LGBMRegressor(
-        n_estimators=150,
-        max_depth=4,
-        learning_rate=0.05,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        random_state=RANDOM_STATE,
-        objective="regression",
-        verbosity=-1,
-        n_jobs=1
-    )
+# LightGBM's create_model() removed here -- its C++ backend and
+# internal data structures had meaningfully more baseline memory
+# overhead than the remaining models, even at n_jobs=1 and a
+# trimmed n_estimators, and was the most likely contributor to the
+# OOM kills on Render's free 512MB tier. Ridge, Decision Tree, and
+# MLP already cover the "simple ML" bases without it, and removing
+# the import entirely also drops lightgbm's baseline memory cost
+# before any training even starts.
 
 
 def create_ridge_model():
@@ -378,17 +362,19 @@ def create_tree_model():
 
 
 def create_mlp_model():
-    # max_iter dropped from 5000 to 500: with the lbfgs solver on
-    # a small (8-unit) hidden layer this converges well within a
-    # few hundred iterations in practice, so 5000 was mostly wasted
-    # compute -- especially costly since this model gets refit
-    # SELECTION_WINDOW times during a walk-forward backtest.
+    # Switched from lbfgs to adam: lbfgs keeps an approximation of
+    # the Hessian in memory across the whole fit, which is more
+    # memory-hungry than adam's simple per-batch gradient updates --
+    # worth the trade given this is refit SELECTION_WINDOW times
+    # per backtest on a host that's already hitting its RAM ceiling.
+    # max_iter lowered accordingly since adam needs more small steps
+    # rather than lbfgs's fewer large ones, but each step is cheap.
     return MLPRegressor(
         hidden_layer_sizes=(8,),
         activation="relu",
-        solver="lbfgs",
+        solver="adam",
         alpha=0.01,
-        max_iter=500,
+        max_iter=300,
         random_state=RANDOM_STATE
     )
 
@@ -587,7 +573,6 @@ def historical_model_selection(
     )
 
     errors = {
-        "lightgbm": [],
         "ridge": [],
         "decision_tree": [],
         "mlp": [],
@@ -620,30 +605,6 @@ def historical_model_selection(
         test_year = int(
             test["year"].iloc[0]
         )
-
-        try:
-            model = create_model()
-
-            model.fit(
-                X_train,
-                y_train
-            )
-
-            pred = model.predict(X_test)[0]
-
-            forecast = (
-                previous_price *
-                np.exp(pred)
-            )
-
-            errors["lightgbm"].append(
-                abs(actual_price - forecast)
-            )
-
-        except Exception as e:
-            print(
-                f"Historical LightGBM error: {e}"
-            )
 
         try:
             scaler = StandardScaler()
@@ -1087,13 +1048,6 @@ def run_forecast_pipeline(
         "target_logret"
     ]
 
-    lgbm_model = create_model()
-
-    lgbm_model.fit(
-        X_train,
-        y_train
-    )
-
     scaler = StandardScaler()
 
     X_train_scaled = (
@@ -1141,18 +1095,6 @@ def run_forecast_pipeline(
         scaler.transform(
             latest_features
         )
-    )
-
-    lgbm_prediction = (
-        lgbm_model
-        .predict(
-            latest_features
-        )[0]
-    )
-
-    forecast_lgbm = (
-        last_known_price *
-        np.exp(lgbm_prediction)
     )
 
     ridge_prediction = (
@@ -1290,7 +1232,6 @@ def run_forecast_pipeline(
         )
 
         forecasts = {
-            "lightgbm": forecast_lgbm,
             "ridge": forecast_ridge,
             "decision_tree": forecast_tree,
             "mlp": forecast_mlp,
@@ -1319,18 +1260,24 @@ def run_forecast_pipeline(
         selected_model_forecast = None
         selected_model_direction = None
 
-    if forecast_lgbm > last_known_price:
-        lightgbm_direction = "UP"
+    # ridge_direction / ridge_change_percent replace the old
+    # lightgbm_direction / lightgbm_change_percent fields now that
+    # LightGBM has been removed. Ridge is the lightest remaining ML
+    # model and plays the same "always-available fallback" role the
+    # frontend previously leaned on LightGBM for when no selection
+    # has been made yet.
+    if forecast_ridge > last_known_price:
+        ridge_direction = "UP"
 
-    elif forecast_lgbm < last_known_price:
-        lightgbm_direction = "DOWN"
+    elif forecast_ridge < last_known_price:
+        ridge_direction = "DOWN"
 
     else:
-        lightgbm_direction = "FLAT"
+        ridge_direction = "FLAT"
 
-    lightgbm_change_percent = (
+    ridge_change_percent = (
         (
-            forecast_lgbm -
+            forecast_ridge -
             last_known_price
         )
         /
@@ -1375,12 +1322,6 @@ def run_forecast_pipeline(
                 4
             ),
 
-        "lightgbm":
-            round(
-                forecast_lgbm,
-                4
-            ),
-
         "ridge":
             round(
                 forecast_ridge,
@@ -1417,14 +1358,14 @@ def run_forecast_pipeline(
         "irp_rate_year":
             latest_rate_year,
 
-        "lightgbm_change_percent":
+        "ridge_change_percent":
             round(
-                lightgbm_change_percent,
+                ridge_change_percent,
                 4
             ),
 
-        "lightgbm_direction":
-            lightgbm_direction,
+        "ridge_direction":
+            ridge_direction,
 
         "selected_model_key":
             selected_model_key,
