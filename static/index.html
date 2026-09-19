@@ -6,9 +6,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <meta name="application-name" content="FX Forecast">
-
-    <title>FX Forecast</title>
+    <title>FX Forecast Dashboard</title>
 
     <!-- =========================================================
          PWA MANIFEST
@@ -29,24 +27,7 @@
     ========================================================== -->
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-
-
-    <!-- =========================================================
-         HAMMER.JS
-         Required for zoom/pan interactions
-    ========================================================== -->
-
-    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
-
-
-    <!-- =========================================================
-         CHART.JS ZOOM PLUGIN
-    ========================================================== -->
-
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"></script>
-
-
-    <style>
+<style>
 
         /* =========================================================
            VARIABLES
@@ -275,20 +256,6 @@
             color: var(--muted);
         }
 
-        .selected-model-tag {
-            width: 100%;
-
-            font-family: 'Courier New', monospace;
-
-            font-size: 0.75rem;
-
-            letter-spacing: 0.06em;
-
-            text-transform: uppercase;
-
-            color: var(--brass);
-        }
-
         .direction-pill {
             font-family: 'Courier New', monospace;
 
@@ -333,7 +300,7 @@
         .panel-grid {
             display: grid;
 
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(4, 1fr);
 
             gap: 12px;
 
@@ -353,28 +320,8 @@
             vertical-align: middle;
         }
 
-        .selected-badge {
-            display: inline-block;
-            margin-left: 8px;
-            padding: 3px 7px;
-            border: 1px solid var(--brass);
-            border-radius: 999px;
-            font-family: 'Courier New', monospace;
-            font-size: 9px;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            vertical-align: middle;
-            color: var(--brass);
-            background: var(--brass-soft);
-        }
-
         .benchmark-panel {
             border-style: dashed;
-        }
-
-        .selected-panel {
-            border-color: var(--brass);
-            box-shadow: 0 0 0 1px var(--brass), var(--shadow);
         }
 
         .panel {
@@ -507,29 +454,22 @@
 
 
         /* =========================================================
-           CHART CONTAINER
+           HISTORICAL FX CHART
         ========================================================== */
 
         .chart-container {
             position: relative;
-
             width: 100%;
-
-            height: 460px;
-
+            height: 360px;
             background: #ffffff;
-
             border: 1px solid var(--line);
             border-radius: 8px;
-
             box-shadow: var(--shadow);
-
             padding: 15px;
         }
 
         #fxChart {
             width: 100% !important;
-
             height: 100% !important;
         }
 
@@ -626,6 +566,14 @@
            MOBILE
         ========================================================== */
 
+        @media (max-width: 850px) {
+
+            .panel-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+        }
+
         @media (max-width: 640px) {
 
             .panel-grid {
@@ -670,11 +618,10 @@
 
         <span>FX FORECAST DASHBOARD</span>
 
-        <span>DAILY MODEL SELECTION: RIDGE · DECISION TREE · MLP · PPP · IRP</span>
+        <span>DAILY SELECTED MODEL + RANDOM WALK BENCHMARK</span>
 
         <span>
-            BENCHMARK: RANDOM WALK · BEST MODEL CHOSEN EACH DAY BY
-            WALK-FORWARD ACCURACY
+            ALL MODELS RUN IN THE BACKEND · ONLY THE BEST MODEL IS DISPLAYED
         </span>
 
         <span>DAILY TRADING-DAY FORECAST</span>
@@ -739,42 +686,11 @@
     <script>
 
         /* =========================================================
-           REGISTER ZOOM PLUGIN
-        ========================================================== */
-
-        if (typeof zoomPlugin !== "undefined") {
-
-            Chart.register(zoomPlugin);
-
-        }
-
-
-        /* =========================================================
            GLOBAL
         ========================================================== */
 
         // Render backend used by the Android app and web dashboard.
         const API_BASE = "https://usd-inr-exchange-rate-forecasting.onrender.com";
-
-        // Render's free tier can cold-start (server was asleep) or
-        // the forecast pipeline can be mid-run when a request lands.
-        // Either way, plain fetch() has NO built-in timeout -- it
-        // will hang forever with no error, which is why the app can
-        // appear to just never open. FETCH_TIMEOUT_MS bounds that.
-        //
-        // A cold Render instance has to boot Python, load the ML
-        // libraries, then (if the cached forecast is stale) run the
-        // full pipeline: a yfinance download plus two World Bank API
-        // calls plus training four models. That routinely takes
-        // 30-60s+ on the free tier, so a 20s timeout was firing
-        // before the very first request had a real chance to finish.
-        const FETCH_TIMEOUT_MS = 45000;
-
-        // Shown if a request is still pending after this long, so
-        // the user sees *something* instead of a static "Fetching…"
-        // message that looks identical whether it'll finish in
-        // 2 seconds or never.
-        const SLOW_NOTICE_MS = 6000;
 
         let fxChart = null;
 
@@ -794,70 +710,8 @@
         const headline =
             document.getElementById("headline");
 
-
-        /* =========================================================
-           FETCH WITH TIMEOUT
-
-           Wraps fetch() with AbortController so a slow or hung
-           backend (cold start, mid-pipeline-run, dropped connection)
-           fails after FETCH_TIMEOUT_MS instead of hanging forever.
-           Same signature as fetch() -- drop-in replacement.
-        ========================================================== */
-
-        async function fetchWithTimeout(url, options) {
-
-            const controller = new AbortController();
-
-            const timeoutId = setTimeout(
-                function () {
-                    controller.abort();
-                },
-                FETCH_TIMEOUT_MS
-            );
-
-            try {
-
-                return await fetch(
-                    url,
-                    Object.assign(
-                        {},
-                        options,
-                        { signal: controller.signal }
-                    )
-                );
-
-            }
-
-            catch (error) {
-
-                if (error.name === "AbortError") {
-
-                    throw new Error(
-                        "Request timed out after " +
-                        (FETCH_TIMEOUT_MS / 1000) +
-                        "s -- the server may be starting up."
-                    );
-
-                }
-
-                throw error;
-
-            }
-
-            finally {
-
-                clearTimeout(timeoutId);
-
-            }
-
-        }
-
         /* =========================================================
            MODEL DEFINITIONS
-
-           Every model the backend can select as the "best" model.
-           `key` must match the field name on the /api/predict
-           response (data[key]).
         ========================================================== */
 
         const MODELS = [
@@ -867,47 +721,7 @@
                 label: "LightGBM",
                 role: "model",
                 color: "#a9822f",
-                note: "Machine-learning model"
-            },
-
-            {
-                key: "ridge",
-                label: "Ridge",
-                role: "model",
-                color: "#2f6d4f",
-                note: "Linear machine-learning model"
-            },
-
-            {
-                key: "decision_tree",
-                label: "Decision Tree",
-                role: "model",
-                color: "#a1372f",
-                note: "Small single-tree model"
-            },
-
-            {
-                key: "mlp",
-                label: "MLP",
-                role: "model",
-                color: "#c26b1f",
-                note: "Tiny neural-network model"
-            },
-
-            {
-                key: "ppp",
-                label: "PPP",
-                role: "model",
-                color: "#2f6d9f",
-                note: "Purchasing Power Parity model"
-            },
-
-            {
-                key: "irp",
-                label: "IRP",
-                role: "model",
-                color: "#7a4fa0",
-                note: "Interest Rate Parity model"
+                width: 2.5
             },
 
             {
@@ -915,7 +729,47 @@
                 label: "Random Walk",
                 role: "benchmark",
                 color: "#6b6a5f",
-                note: "Benchmark · tomorrow = latest price"
+                width: 1.5
+            },
+
+            {
+                key: "ppp",
+                label: "PPP",
+                role: "model",
+                color: "#2f6d9f",
+                width: 1.5
+            },
+
+            {
+                key: "irp",
+                label: "IRP",
+                role: "model",
+                color: "#7a4fa0",
+                width: 1.5
+            },
+
+            {
+                key: "ridge",
+                label: "Ridge",
+                role: "model",
+                color: "#2f6d4f",
+                width: 1.5
+            },
+
+            {
+                key: "decision_tree",
+                label: "Decision Tree",
+                role: "model",
+                color: "#a1372f",
+                width: 1.5
+            },
+
+            {
+                key: "mlp",
+                label: "MLP",
+                role: "model",
+                color: "#c26b1f",
+                width: 1.5
             }
 
         ];
@@ -958,74 +812,6 @@
 
 
         /* =========================================================
-           SELECTED MODEL HELPERS
-
-           The backend picks a "best" model each day (see
-           selected_model_key / selected_model_forecast /
-           selected_model_direction / selected_model_label on the
-           /api/predict response) based on which model had the
-           lowest recent forecasting error. Early on -- before
-           enough history has accumulated -- the backend may not
-           have made a selection yet, so everything here falls
-           back to LightGBM.
-        ========================================================== */
-
-        function getSelectedModelKey(data) {
-
-            return data.selected_model_key || "lightgbm";
-
-        }
-
-        function getSelectedModelLabel(data) {
-
-            return data.selected_model_label || "LightGBM";
-
-        }
-
-        function getSelectedModelForecast(data) {
-
-            return (
-                data.selected_model_forecast !== null &&
-                data.selected_model_forecast !== undefined
-            )
-                ? data.selected_model_forecast
-                : data.lightgbm;
-
-        }
-
-        function getSelectedModelDirection(data) {
-
-            return (
-                data.selected_model_direction ||
-                data.lightgbm_direction
-            );
-
-        }
-
-        function getSelectedModelChangePercent(data) {
-
-            const forecast = getSelectedModelForecast(data);
-
-            if (
-                forecast === null ||
-                forecast === undefined ||
-                !data.latest_price
-            ) {
-
-                return null;
-
-            }
-
-            return (
-                (forecast - data.latest_price) /
-                data.latest_price *
-                100
-            );
-
-        }
-
-
-        /* =========================================================
            STORAGE KEYS (namespaced per pair)
         ========================================================== */
 
@@ -1051,6 +837,144 @@
         ========================================================== */
 
         const PAIRS_LIST_STORAGE_KEY = "fx_pairs_list";
+
+        /* =========================================================
+           DAILY MODEL SELECTION
+
+           All non-benchmark models are still calculated by the
+           backend. The dashboard displays only the model that was
+           closest to the actual end-of-day close for the previous
+           forecast day. Random Walk is always displayed separately
+           as the benchmark.
+
+           Example:
+           - Monday forecast for Tuesday is saved.
+           - Tuesday's actual close becomes available.
+           - The app compares Monday's six model forecasts with
+             Tuesday's actual close.
+           - The smallest absolute error becomes Tuesday's selected
+             model for the next dashboard forecast.
+        ========================================================== */
+
+        const FORECAST_MODEL_KEYS = [
+            "lightgbm",
+            "ppp",
+            "irp",
+            "ridge",
+            "decision_tree",
+            "mlp"
+        ];
+
+        const MODEL_LABELS = {
+            lightgbm: "LightGBM",
+            ppp: "PPP",
+            irp: "IRP",
+            ridge: "Ridge",
+            decision_tree: "Decision Tree",
+            mlp: "MLP"
+        };
+
+        function getModelLabel(modelKey) {
+
+            return MODEL_LABELS[modelKey] || modelKey;
+
+        }
+
+        function findActualForForecastDate(history, forecastDate) {
+
+            if (!Array.isArray(history) || !forecastDate) {
+                return null;
+            }
+
+            const match = history.find(function (item) {
+
+                return String(item.date) === String(forecastDate);
+
+            });
+
+            if (!match || !Number.isFinite(Number(match.price))) {
+                return null;
+            }
+
+            return Number(match.price);
+
+        }
+
+        function evaluatePreviousForecast(previousForecast, history) {
+
+            if (!previousForecast) {
+                return null;
+            }
+
+            const forecastDate = previousForecast.forecast_date;
+
+            const actualClose = findActualForForecastDate(
+                history,
+                forecastDate
+            );
+
+            if (actualClose === null) {
+                return null;
+            }
+
+            let bestKey = null;
+            let bestError = Infinity;
+
+            FORECAST_MODEL_KEYS.forEach(function (key) {
+
+                const prediction = Number(previousForecast[key]);
+
+                if (!Number.isFinite(prediction)) {
+                    return;
+                }
+
+                const error = Math.abs(
+                    prediction - actualClose
+                );
+
+                if (error < bestError) {
+
+                    bestError = error;
+                    bestKey = key;
+
+                }
+
+            });
+
+            if (!bestKey) {
+                return null;
+            }
+
+            return {
+                key: bestKey,
+                label: getModelLabel(bestKey),
+                error: bestError,
+                actualClose: actualClose,
+                evaluatedDate: forecastDate
+            };
+
+        }
+
+        function getSelectedModel(data) {
+
+            const key =
+                data && data.selected_model_key;
+
+            if (
+                key &&
+                FORECAST_MODEL_KEYS.includes(key) &&
+                Number.isFinite(Number(data[key]))
+            ) {
+                return {
+                    key: key,
+                    label: getModelLabel(key)
+                };
+            }
+
+            return null;
+
+        }
+
 
 
         /* =========================================================
@@ -1083,7 +1007,7 @@
 
                 <span class="direction-pill ${cls}">
 
-                    ${arrow} ${direction || "FLAT"}
+                    ${arrow} ${direction}
 
                 </span>
 
@@ -1109,7 +1033,7 @@
 
             try {
 
-                const res = await fetchWithTimeout(
+                const res = await fetch(
                     `${API_BASE}/api/pairs`,
                     { cache: "no-store" }
                 );
@@ -1190,93 +1114,19 @@
 
             loadDashboard();
 
-            /*
-             * While actually online, quietly download every pair's
-             * data in the background. This means switching pairs
-             * later — even with no internet — has something saved
-             * to fall back on, instead of only the one pair the
-             * user happened to be viewing when connectivity dropped.
-             */
-
-            if (fetchedOnline) {
-
-                prefetchAllPairs();
-
-            }
-
         }
 
 
         /* =========================================================
-           PREFETCH ALL PAIRS
+           PREFETCH ALL PAIRS DISABLED
 
-           Loops through every pair in availablePairs and stores
-           its forecast + history data in localStorage, namespaced
-           the same way loadDashboard() already saves data. This is
-           what actually makes "switch pairs while offline" possible
-           for pairs beyond whichever one was open at the time.
+           Forecasts are intentionally fetched only for the pair the
+           user is viewing. This reduces Render/Yahoo load and avoids
+           unnecessary API failures when the dashboard starts.
         ========================================================== */
 
         async function prefetchAllPairs() {
-
-            for (const p of availablePairs) {
-
-                try {
-
-                    const results = await Promise.all([
-
-                        fetchWithTimeout(
-                            `${API_BASE}/api/predict?pair=${p.key}`,
-                            { cache: "no-store" }
-                        ),
-
-                        fetchWithTimeout(
-                            `${API_BASE}/api/history?pair=${p.key}`,
-                            { cache: "no-store" }
-                        )
-
-                    ]);
-
-                    const predictRes = results[0];
-
-                    const historyRes = results[1];
-
-                    if (predictRes.ok) {
-
-                        const data = await predictRes.json();
-
-                        localStorage.setItem(
-                            forecastStorageKey(p.key),
-                            JSON.stringify(data)
-                        );
-
-                    }
-
-                    if (historyRes.ok) {
-
-                        const history = await historyRes.json();
-
-                        localStorage.setItem(
-                            historyStorageKey(p.key),
-                            JSON.stringify(history)
-                        );
-
-                    }
-
-                }
-
-                catch (error) {
-
-                    console.warn(
-                        "Prefetch failed for pair:",
-                        p.key,
-                        error
-                    );
-
-                }
-
-            }
-
+            return;
         }
 
 
@@ -1314,49 +1164,102 @@
 
     const pair = currentPair;
 
-    // If the request is still pending after SLOW_NOTICE_MS, tell
-    // the user why -- otherwise "Fetching today's numbers…" looks
-    // identical whether it resolves in 2 seconds or times out.
-    const slowNoticeTimer = setTimeout(
-        function () {
-
-            if (content.className === "loading") {
-
-                content.innerHTML =
-                    "Fetching today's numbers… " +
-                    "<br><br>" +
-                    "<small>Still working \u2014 the server may be " +
-                    "starting up. This can take up to " +
-                    (FETCH_TIMEOUT_MS / 1000) +
-                    "s.</small>";
-
-            }
-
-        },
-        SLOW_NOTICE_MS
-    );
-
     try {
 
-        const results = await Promise.all([
-            fetchWithTimeout(`${API_BASE}/api/predict?pair=${pair}`, { cache: "no-store" }),
-            fetchWithTimeout(`${API_BASE}/api/history?pair=${pair}`, { cache: "no-store" })
-        ]);
-
-        const predictRes = results[0];
-        const historyRes = results[1];
+        // Request prediction first. It may train models and refresh the cache.
+        // History is requested only after prediction has finished.
+        const predictRes = await fetch(
+            `${API_BASE}/api/predict?pair=${pair}`,
+            { cache: "no-store" }
+        );
 
         if (!predictRes.ok) {
-            throw new Error("Forecast API failed (" + predictRes.status + ")");
+            let message = "Forecast API failed";
+            try {
+                const errorData = await predictRes.json();
+                if (errorData && errorData.error) {
+                    message = errorData.error;
+                }
+            } catch (_) {}
+            throw new Error(message);
         }
 
         const data = await predictRes.json();
+
+        // The prediction request has already refreshed the history file.
+        const historyRes = await fetch(
+            `${API_BASE}/api/history?pair=${pair}`,
+            { cache: "no-store" }
+        );
 
         let history = [];
 
         if (historyRes.ok) {
             history = await historyRes.json();
         }
+
+        /*
+         * Evaluate the forecast that was saved on the previous
+         * successful visit. Its forecast date should now have an
+         * actual closing price in history.
+         */
+        const previousSavedRaw =
+            localStorage.getItem(
+                forecastStorageKey(pair)
+            );
+
+        let previousSavedData = null;
+
+        if (previousSavedRaw) {
+
+            try {
+                previousSavedData = JSON.parse(previousSavedRaw);
+            }
+            catch (parseError) {
+                console.warn(
+                    "Previous forecast could not be parsed:",
+                    parseError
+                );
+            }
+
+        }
+
+        const evaluatedPrevious =
+            evaluatePreviousForecast(
+                previousSavedData,
+                history
+            );
+
+        /*
+         * The backend can optionally provide selected_model_key.
+         * When it does not, the app uses the previous forecast
+         * evaluation above. This keeps the backend models unchanged
+         * while making the display decision dynamically.
+         */
+        if (evaluatedPrevious) {
+
+            data.selected_model_key =
+                evaluatedPrevious.key;
+
+            data.selected_model_label =
+                evaluatedPrevious.label;
+
+            data.selected_model_error =
+                evaluatedPrevious.error;
+
+            data.selected_model_actual_close =
+                evaluatedPrevious.actualClose;
+
+            data.selected_model_evaluated_date =
+                evaluatedPrevious.evaluatedDate;
+
+        }
+
+        /*
+         * If the backend already supplies a valid selected model,
+         * keep it. Otherwise the value remains absent until a
+         * completed forecast cycle can be evaluated.
+         */
 
         // Save successful forecast data in the browser,
         // namespaced per pair. This becomes our offline backup.
@@ -1456,22 +1359,8 @@
 
             <br><br>
 
-            ${
-                error.message && error.message.indexOf("timed out") !== -1
-                    ? "The server took too long to respond \u2014 it may be starting up after being idle. This is common on the first request after a while."
-                    : "Please connect to the internet once so the latest forecast can be saved."
-            }
-
-            <br><br>
-
-            <button
-                class="chart-btn"
-                id="retryLoadBtn"
-                type="button">
-
-                Retry
-
-            </button>
+            Please connect to the internet once
+            so the latest forecast can be saved.
 
             <br><br>
 
@@ -1485,29 +1374,6 @@
             syncStatus.textContent =
                 "· offline (no saved data yet)";
         }
-
-        const retryBtn =
-            document.getElementById("retryLoadBtn");
-
-        if (retryBtn) {
-
-            retryBtn.onclick = function () {
-
-                content.className = "loading";
-
-                content.innerHTML = "Fetching today's numbers…";
-
-                loadDashboard();
-
-            };
-
-        }
-
-    }
-
-    finally {
-
-        clearTimeout(slowNoticeTimer);
 
     }
 
@@ -1529,14 +1395,35 @@
             const baseCcy = data.base_ccy || "";
             const quoteCcy = data.quote_ccy || "";
 
-            const selectedKey = getSelectedModelKey(data);
-            const selectedLabel = getSelectedModelLabel(data);
-            const selectedForecast = getSelectedModelForecast(data);
-            const selectedDirection = getSelectedModelDirection(data);
-            const selectedChangePercent = getSelectedModelChangePercent(data);
+            const selectedModel =
+                getSelectedModel(data);
+
+            const selectedModelKey =
+                selectedModel
+                    ? selectedModel.key
+                    : null;
+
+            const selectedModelLabel =
+                selectedModel
+                    ? selectedModel.label
+                    : "Best model pending";
+
+            const selectedForecastValue =
+                selectedModel
+                    ? Number(data[selectedModelKey])
+                    : Number(data.random_walk);
+
+            const selectedDirection =
+                selectedModel
+                    ? (
+                        data[selectedModelKey + "_direction"]
+                        || data.lightgbm_direction
+                        || "FLAT"
+                    )
+                    : "FLAT";
 
             // Update chrome that depends on the selected pair
-            document.title = "FX Forecast";
+            document.title = pairLabel + " Tomorrow";
 
             headline.textContent =
                 "Where does " + pairLabel + " land tomorrow?";
@@ -1549,9 +1436,6 @@
 
                 <!-- =================================================
                      RATE
-                     Headline number is whichever model the backend
-                     selected as best-performing (falls back to
-                     LightGBM if no selection has been made yet).
                 ================================================== -->
 
                 <div class="rate-block">
@@ -1560,7 +1444,7 @@
 
                         <div class="rate-figure">
 
-                            ${formatPrice(selectedForecast, quoteCcy, 2)}
+                            ${formatPrice(selectedForecastValue, quoteCcy, 2)}
 
                         </div>
 
@@ -1576,20 +1460,9 @@
                     </span>
 
 
-                    ${pill(selectedDirection)}
-
-
-                    <div class="selected-model-tag">
-
-                        Selected model: ${selectedLabel}
-
-                        ${
-                            data.selection_method
-                                ? " · " + data.selection_method
-                                : ""
-                        }
-
-                    </div>
+                    ${pill(
+                        selectedDirection
+                    )}
 
 
                     <div class="as-of">
@@ -1603,21 +1476,20 @@
                         · expected move
 
                         ${
-                            selectedChangePercent !== null && selectedChangePercent > 0
+                            Number(
+                                data[selectedModelKey + "_change_percent"]
+                            ) > 0
                                 ? "+"
                                 : ""
                         }
 
                         ${
-                            selectedChangePercent !== null
-                                ? selectedChangePercent.toFixed(4) + "%"
+                            selectedModel
+                                ? Number(
+                                    data[selectedModelKey + "_change_percent"]
+                                ).toFixed(4)
                                 : "n/a"
-                        }
-
-                        &nbsp; · &nbsp;
-
-                        Random Walk (benchmark):
-                        ${formatPrice(data.random_walk, quoteCcy, 4)}
+                        }%
 
                     </div>
 
@@ -1653,56 +1525,70 @@
 
                 <!-- =================================================
                      MODEL PANELS
-
-                     Every model the backend can select from is
-                     shown here, including Random Walk as a labeled
-                     benchmark. Whichever one the backend actually
-                     picked as best-performing gets a "Selected"
-                     badge and a highlighted border.
                 ================================================== -->
 
                 <div class="panel-grid">
 
-                    <!-- =============================================
-                         SELECTED MODEL
+                    ${
+                        selectedModel
+                            ? `
+                                <div class="panel hero-model">
 
-                         The other candidate models (Ridge, Decision
-                         Tree, MLP, PPP, IRP, LightGBM) still run and
-                         get scored against each other in the
-                         backend every day -- only the winner is
-                         surfaced here.
-                    ============================================== -->
+                                    <p class="label">
+                                        ${selectedModelLabel}
+                                        <span class="benchmark-badge">Selected</span>
+                                    </p>
 
-                    <div class="panel selected-panel">
+                                    <p class="value">
+                                        ${formatPrice(
+                                            selectedForecastValue,
+                                            quoteCcy,
+                                            4
+                                        )}
+                                    </p>
 
-                        <p class="label">
-                            ${selectedLabel}
-                            <span class="selected-badge">Selected</span>
-                        </p>
+                                    <p class="note">
+                                        Closest model to the most recent
+                                        available end-of-day close
+                                    </p>
 
-                        <p class="value">
+                                    ${
+                                        Number.isFinite(
+                                            Number(data.selected_model_error)
+                                        )
+                                            ? `
+                                                <p class="note">
+                                                    Previous absolute error:
+                                                    ${Number(
+                                                        data.selected_model_error
+                                                    ).toFixed(4)}
+                                                </p>
+                                            `
+                                            : ""
+                                    }
 
-                            ${formatPrice(selectedForecast, quoteCcy, 4)}
+                                </div>
+                            `
+                            : `
+                                <div class="panel hero-model">
 
-                        </p>
+                                    <p class="label">
+                                        Best model
+                                    </p>
 
-                        <p class="note">
+                                    <p class="value">
+                                        Pending
+                                    </p>
 
-                            Best-performing model
-                            ${
-                                data.selection_method
-                                    ? "(" + data.selection_method + ")"
-                                    : ""
-                            }
+                                    <p class="note">
+                                        The first model winner will appear
+                                        after an actual closing rate is
+                                        available for a completed forecast.
+                                    </p>
 
-                        </p>
-
-                    </div>
-
-
-                    <!-- =============================================
-                         RANDOM WALK BENCHMARK
-                    ============================================== -->
+                                </div>
+                            `
+                    }
 
                     <div class="panel benchmark-panel">
 
@@ -1712,74 +1598,34 @@
                         </p>
 
                         <p class="value">
-
-                            ${formatPrice(data.random_walk, quoteCcy, 4)}
-
+                            ${formatPrice(
+                                data.random_walk,
+                                quoteCcy,
+                                4
+                            )}
                         </p>
 
                         <p class="note">
-
                             Benchmark · tomorrow = latest price
-
                         </p>
 
                     </div>
 
                 </div>
 
-
                 <!-- =================================================
-                     INTERACTIVE CHART
+                     HISTORICAL FX CHART
                 ================================================== -->
 
                 <div id="chart-wrap">
 
-
                     <div class="chart-header">
 
                         <h2>
-
-                            ${pairLabel} — Last 60 Trading Days
-                            · Best model: ${selectedLabel}
-
+                            ${pairLabel} — Historical FX Rate
                         </h2>
 
-
-                        <div class="chart-controls">
-
-                            <button
-                                class="chart-btn"
-                                id="zoomInBtn"
-                                type="button">
-
-                                + Zoom
-
-                            </button>
-
-
-                            <button
-                                class="chart-btn"
-                                id="zoomOutBtn"
-                                type="button">
-
-                                − Zoom
-
-                            </button>
-
-
-                            <button
-                                class="chart-btn"
-                                id="resetZoomBtn"
-                                type="button">
-
-                                Reset
-
-                            </button>
-
-                        </div>
-
                     </div>
-
 
                     <div class="chart-container">
 
@@ -1787,46 +1633,21 @@
 
                     </div>
 
-
                     <div class="chart-help">
 
-                        🖱️ Mouse wheel = Zoom
-
-                        &nbsp; · &nbsp;
-
-                        🔍 Drag inside chart = Zoom into period
-
-                        &nbsp; · &nbsp;
-
-                        ✋ Shift + drag = Pan
-
-                        &nbsp; · &nbsp;
-
-                        Hover = Exact price
-
-                        &nbsp; · &nbsp;
-
-                        Random Walk = benchmark
-
-                        &nbsp; · &nbsp;
-
-                        Bold dashed line = selected best model
-
-                        &nbsp; · &nbsp;
-
-                        Click a legend name = Show/hide that model
+                        Actual end-of-day closing rates ·
+                        One point per trading day ·
+                        New data extends the line automatically
 
                     </div>
-
 
                     <div
                         id="chartStatus"
                         class="chart-status">
 
-                        Preparing chart…
+                        Preparing historical chart…
 
                     </div>
-
 
                 </div>
 
@@ -1836,8 +1657,7 @@
             createInteractiveChart(
                 history,
                 data,
-                quoteCcy,
-                selectedKey
+                quoteCcy
             );
 
             const pairSelect =
@@ -1857,304 +1677,112 @@
 
 
         /* =========================================================
-           CREATE CHART
+           CREATE HISTORICAL FX CHART
         ========================================================== */
 
         function createInteractiveChart(
             history,
             data,
-            quoteCcy,
-            selectedKey
+            quoteCcy
         ) {
 
             const canvas =
-                document.getElementById(
-                    "fxChart"
-                );
-
+                document.getElementById("fxChart");
 
             const status =
-                document.getElementById(
-                    "chartStatus"
-                );
+                document.getElementById("chartStatus");
 
+            if (!canvas || typeof Chart === "undefined") {
 
-            if (!canvas) {
-
-                console.error(
-                    "Canvas not found"
-                );
+                if (status) {
+                    status.textContent =
+                        "Historical chart is unavailable.";
+                }
 
                 return;
-
             }
 
-
-            if (!history || history.length === 0) {
+            if (!Array.isArray(history) || history.length === 0) {
 
                 status.textContent =
-                    "No historical data available.";
+                    "No historical FX data available.";
 
                 return;
-
             }
 
+            /* Keep only valid actual closing-rate observations. */
+            const cleanHistory = history
+                .filter(function (item) {
+                    return item &&
+                        item.date &&
+                        Number.isFinite(Number(item.price));
+                })
+                .sort(function (a, b) {
+                    return new Date(a.date) - new Date(b.date);
+                });
 
-            /* =====================================================
-               SORT BY DATE
-            ====================================================== */
+            if (cleanHistory.length === 0) {
 
-            history = [...history].sort(
-                function (a, b) {
+                status.textContent =
+                    "No valid historical FX data available.";
 
-                    return new Date(a.date)
-                        - new Date(b.date);
-
-                }
-            );
-
-
-            /* =====================================================
-               DATE LABELS
-            ====================================================== */
-
-            const labels =
-                history.map(
-                    function (item) {
-
-                        return item.date;
-
-                    }
-                );
-
-
-            /* =====================================================
-               ACTUAL PRICES
-            ====================================================== */
-
-            const actualValues =
-                history.map(
-                    function (item) {
-
-                        return Number(
-                            item.price
-                        );
-
-                    }
-                );
-
-
-            /* =====================================================
-               FORECAST LABELS
-            ====================================================== */
-
-            const lastActual =
-                actualValues[
-                    actualValues.length - 1
-                ];
-
-
-            const forecastLabels = [
-                ...labels,
-                data.forecast_date
-            ];
-
-
-            /*
-             * Build one forecast series per model.
-             *
-             * The dashed line starts at the last actual
-             * price and ends at tomorrow's forecast.
-             */
-
-            function buildForecastSeries(modelValue) {
-
-                return [
-
-                    ...new Array(
-                        actualValues.length - 1
-                    ).fill(null),
-
-                    lastActual,
-
-                    Number(modelValue)
-
-                ];
-
+                return;
             }
 
+            const labels = cleanHistory.map(function (item) {
+                return item.date;
+            });
 
-            const forecastSeriesLength =
-                actualValues.length + 1;
-
-
-            /* =====================================================
-               DESTROY PREVIOUS CHART
-            ====================================================== */
+            const values = cleanHistory.map(function (item) {
+                return Number(item.price);
+            });
 
             if (fxChart) {
-
                 fxChart.destroy();
-
                 fxChart = null;
-
             }
-
-
-            /* =====================================================
-               CREATE CHART
-
-               Every model in MODELS gets its own dashed forecast
-               line, including Random Walk. Whichever model matches
-               `selectedKey` (the backend's daily pick) is drawn
-               thicker with a larger endpoint marker so it stands
-               out from the rest.
-            ====================================================== */
 
             try {
 
-                // Only the selected model's forecast line and the
-                // Random Walk benchmark are drawn -- the other
-                // candidate models still ran in the backend, they
-                // just aren't plotted individually here.
-                const chartModels =
-                    MODELS.filter(
-                        function (model) {
-
-                            return (
-                                model.key === selectedKey ||
-                                model.role === "benchmark"
-                            );
-
-                        }
-                    );
-
-                const forecastDatasets =
-                    chartModels.map(
-                        function (model) {
-
-                            const series =
-                                buildForecastSeries(
-                                    data[model.key]
-                                );
-
-                            const isSelected =
-                                model.key === selectedKey;
-
-                            return {
-
-                                label:
-                                    model.label +
-                                    (model.role === "benchmark"
-                                        ? " benchmark"
-                                        : " forecast (selected)"),
-
-                                data:
-                                    series,
-
-                                borderColor:
-                                    model.color,
-
-                                backgroundColor:
-                                    model.color,
-
-                                borderWidth:
-                                    isSelected ? 3 : 1.5,
-
-                                borderDash: [
-                                    6,
-                                    5
-                                ],
-
-                                pointRadius:
-                                    function (context) {
-
-                                        return context.dataIndex
-                                            === forecastSeriesLength - 1
-                                            ? (
-                                                isSelected
-                                                    ? 7
-                                                    : 4
-                                            )
-                                            : 0;
-
-                                    },
-
-                                pointHoverRadius: 8,
-
-                                pointHitRadius: 12,
-
-                                tension: 0,
-
-                                fill: false
-
-                            };
-
-                        }
-                    );
-
-
                 fxChart = new Chart(
-
                     canvas.getContext("2d"),
-
                     {
-
                         type: "line",
-
 
                         data: {
 
-                            labels:
-                                forecastLabels,
+                            labels: labels,
 
                             datasets: [
-
-                                /* =================================
-                                   ACTUAL
-                                ================================== */
-
                                 {
-
                                     label:
-                                        "Actual " + (data.pair_label || currentPair),
+                                        "Actual " +
+                                        (data.pair_label || currentPair),
 
-                                    data: [
-                                        ...actualValues,
-                                        null
-                                    ],
+                                    data: values,
 
-                                    borderColor:
-                                        "#1a2332",
+                                    borderColor: "#1a2332",
 
                                     backgroundColor:
-                                        "transparent",
+                                        "rgba(26,35,50,0.08)",
 
                                     borderWidth: 2,
 
-                                    pointRadius: 0,
+                                    pointRadius:
+                                        cleanHistory.length > 60
+                                            ? 0
+                                            : 2,
 
                                     pointHoverRadius: 5,
 
                                     pointHitRadius: 12,
 
-                                    tension: 0,
+                                    tension: 0.15,
 
-                                    fill: false
-
-                                },
-
-
-                                /* =================================
-                                   FORECAST MODELS
-                                ================================== */
-
-                                ...forecastDatasets
-
+                                    fill: true
+                                }
                             ]
-
                         },
-
 
                         options: {
 
@@ -2162,112 +1790,43 @@
 
                             maintainAspectRatio: false,
 
-
                             interaction: {
-
                                 mode: "index",
-
                                 intersect: false
-
                             },
-
 
                             plugins: {
 
                                 legend: {
-
                                     display: true,
-
-                                    position: "bottom",
-
-                                    labels: {
-
-                                        font: {
-
-                                            family:
-                                                "'Courier New', monospace",
-
-                                            size: 11
-
-                                        },
-
-                                        usePointStyle: true,
-
-                                        padding: 16,
-
-                                        boxWidth: 10
-
-                                    }
-
+                                    position: "bottom"
                                 },
-
 
                                 tooltip: {
 
                                     enabled: true,
 
-                                    backgroundColor:
-                                        "#1a2332",
-
-                                    titleColor:
-                                        "#ffffff",
-
-                                    bodyColor:
-                                        "#ffffff",
-
-                                    padding: 12,
-
-                                    displayColors: true,
-
                                     callbacks: {
 
-                                        title: function (
-                                            tooltipItems
-                                        ) {
+                                        title: function (items) {
 
-                                            if (
-                                                !tooltipItems.length
-                                            ) {
-
+                                            if (!items.length) {
                                                 return "";
-
                                             }
-
-
-                                            const index =
-                                                tooltipItems[0]
-                                                    .dataIndex;
-
 
                                             const date =
-                                                forecastLabels[
-                                                    index
-                                                ];
-
-
-                                            if (!date) {
-
-                                                return "";
-
-                                            }
-
+                                                labels[items[0].dataIndex];
 
                                             const parsed =
-                                                new Date(
-                                                    date
-                                                );
-
+                                                new Date(date);
 
                                             if (
                                                 isNaN(
                                                     parsed.getTime()
                                                 )
                                             ) {
-
                                                 return date;
-
                                             }
-
 
                                             return parsed.toLocaleDateString(
                                                 "en-GB",
@@ -2277,137 +1836,41 @@
                                                     year: "numeric"
                                                 }
                                             );
-
                                         },
 
-
-                                        label: function (
-                                            context
-                                        ) {
-
-                                            if (
-                                                context.parsed.y === null
-                                            ) {
-
-                                                return null;
-
-                                            }
-
+                                        label: function (context) {
 
                                             return (
-
-                                                context.dataset.label
-                                                +
-                                                ": "
-                                                +
+                                                " Actual close: " +
                                                 formatPrice(
                                                     context.parsed.y,
                                                     quoteCcy,
                                                     4
                                                 )
-
                                             );
-
                                         }
-
                                     }
-
-                                },
-
-
-                                /* =================================
-                                   ZOOM / PAN
-                                ================================== */
-
-                                zoom: {
-
-                                    pan: {
-
-                                        enabled: true,
-
-                                        mode: "x",
-
-                                        modifierKey: "shift"
-
-                                    },
-
-
-                                    zoom: {
-
-                                        wheel: {
-
-                                            enabled: true,
-
-                                            speed: 0.08
-
-                                        },
-
-
-                                        pinch: {
-
-                                            enabled: true
-
-                                        },
-
-
-                                        drag: {
-
-                                            enabled: true,
-
-                                            backgroundColor:
-                                                "rgba(169,130,47,0.15)",
-
-                                            borderColor:
-                                                "#a9822f",
-
-                                            borderWidth: 1
-
-                                        },
-
-
-                                        mode: "x"
-
-                                    }
-
                                 }
-
                             },
-
 
                             scales: {
 
                                 x: {
 
-                                    type: "category",
-
                                     grid: {
-
-                                        color:
-                                            "#e2ded4"
-
+                                        color: "#e2ded4"
                                     },
 
                                     ticks: {
 
-                                        color:
-                                            "#6b6a5f",
-
-                                        font: {
-
-                                            family:
-                                                "'Courier New', monospace",
-
-                                            size: 10
-
-                                        },
+                                        color: "#6b6a5f",
 
                                         maxTicksLimit: 8,
 
                                         autoSkip: true,
 
                                         callback: function (
-                                            value,
-                                            index
+                                            value
                                         ) {
 
                                             const date =
@@ -2415,30 +1878,20 @@
                                                     value
                                                 );
 
-
                                             if (!date) {
-
                                                 return "";
-
                                             }
 
-
                                             const parsed =
-                                                new Date(
-                                                    date
-                                                );
-
+                                                new Date(date);
 
                                             if (
                                                 isNaN(
                                                     parsed.getTime()
                                                 )
                                             ) {
-
                                                 return date;
-
                                             }
-
 
                                             return parsed.toLocaleDateString(
                                                 "en-GB",
@@ -2447,191 +1900,58 @@
                                                     month: "short"
                                                 }
                                             );
-
                                         }
-
                                     }
-
                                 },
-
 
                                 y: {
 
                                     grid: {
-
-                                        color:
-                                            "#e2ded4"
-
+                                        color: "#e2ded4"
                                     },
 
                                     ticks: {
 
-                                        color:
-                                            "#6b6a5f",
+                                        color: "#6b6a5f",
 
-                                        font: {
-
-                                            family:
-                                                "'Courier New', monospace",
-
-                                            size: 10
-
-                                        },
-
-                                        callback: function (
-                                            value
-                                        ) {
+                                        callback: function (value) {
 
                                             return formatPrice(
                                                 value,
                                                 quoteCcy,
                                                 2
                                             );
-
                                         }
-
                                     }
-
                                 }
-
                             }
-
                         }
-
                     }
-
                 );
 
-
-                /* =================================================
-                   BUTTON EVENTS
-                ================================================== */
-
-                const zoomIn =
-                    document.getElementById(
-                        "zoomInBtn"
-                    );
-
-
-                const zoomOut =
-                    document.getElementById(
-                        "zoomOutBtn"
-                    );
-
-
-                const reset =
-                    document.getElementById(
-                        "resetZoomBtn"
-                    );
-
-
-                if (zoomIn) {
-
-                    zoomIn.onclick =
-                        function () {
-
-                            if (fxChart) {
-
-                                fxChart.zoom(
-                                    1.3
-                                );
-
-                            }
-
-                        };
-
-                }
-
-
-                if (zoomOut) {
-
-                    zoomOut.onclick =
-                        function () {
-
-                            if (fxChart) {
-
-                                fxChart.zoom(
-                                    0.7
-                                );
-
-                            }
-
-                        };
-
-                }
-
-
-                if (reset) {
-
-                    reset.onclick =
-                        function () {
-
-                            if (fxChart) {
-
-                                fxChart.resetZoom();
-
-                            }
-
-                        };
-
-                }
-
-
-                /* =================================================
-                   STATUS
-                ================================================== */
-
-                const selectedLabelForStatus =
-                    getSelectedModelLabel(data);
-
-                const selectedForecastForStatus =
-                    getSelectedModelForecast(data);
-
                 status.textContent =
+                    cleanHistory.length +
+                    " trading days shown · Latest actual: " +
+                    formatPrice(
+                        values[values.length - 1],
+                        quoteCcy,
+                        4
+                    );
 
-                    history.length
-                    +
-                    " trading days shown · "
-                    +
-                    "Latest actual: "
-                    +
-                    formatPrice(data.latest_price, quoteCcy, 4)
-                    +
-                    " · Selected model ("
-                    +
-                    selectedLabelForStatus
-                    +
-                    ") forecast: "
-                    +
-                    formatPrice(selectedForecastForStatus, quoteCcy, 4)
-                    +
-                    " for "
-                    +
-                    data.forecast_date;
-
-            }
-
-            catch (error) {
+            } catch (error) {
 
                 console.error(
-                    "Chart creation error:",
+                    "Historical chart creation error:",
                     error
                 );
 
-
                 status.innerHTML = `
-
                     <span style="color:#a1372f">
-
-                        Chart could not be created:
+                        Historical chart could not be created:
                         ${error.message}
-
                     </span>
-
                 `;
-
             }
-
         }
 
 
@@ -2661,12 +1981,10 @@
                 loadDashboard();
 
                 /*
-                 * Connectivity just came back — refresh the
-                 * offline backups for every pair, not just the
-                 * one currently on screen.
+                 * Connectivity just came back. Refresh only the
+                 * pair currently on screen instead of requesting
+                 * all pairs from the backend.
                  */
-
-                prefetchAllPairs();
 
             }
         );

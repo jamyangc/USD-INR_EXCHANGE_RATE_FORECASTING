@@ -375,7 +375,7 @@ def create_mlp_model():
         activation="relu",
         solver="adam",
         alpha=0.01,
-        max_iter=300,
+        max_iter=100,
         random_state=RANDOM_STATE
     )
 
@@ -558,6 +558,10 @@ def historical_model_selection(
     ppp_data,
     rates
 ):
+    # Live requests must not run a historical retraining backtest.
+    # Selection is taken from archived forecasts once actual prices exist.
+    return None
+
     usable = (
         df
         .dropna(
@@ -1658,51 +1662,28 @@ def refresh():
         "pair"
     )
 
-    if requested_pair:
+    pair_key = resolve_pair() if requested_pair else DEFAULT_PAIR
 
-        pair_key = resolve_pair()
+    if pair_key is None:
 
-        if pair_key is None:
+        return jsonify({
+            "error": "Unknown FX pair."
+        }), 400
 
-            return jsonify({
-                "error": "Unknown FX pair."
-            }), 400
+    try:
 
-        try:
-
-            return jsonify(
-                run_forecast_pipeline(
-                    pair_key
-                )
+        return jsonify(
+            run_forecast_pipeline(
+                pair_key
             )
+        )
 
-        except Exception as e:
+    except Exception as e:
 
-            return jsonify({
-                "error": str(e)
-            }), 500
-
-    results = {}
-    errors = {}
-
-    for pair_key in PAIRS:
-
-        try:
-
-            results[pair_key] = (
-                run_forecast_pipeline(
-                    pair_key
-                )
-            )
-
-        except Exception as e:
-
-            errors[pair_key] = str(e)
-
-    return jsonify({
-        "results": results,
-        "errors": errors
-    })
+        return jsonify({
+            "error": str(e),
+            "pair": pair_key
+        }), 500
 
 
 @app.route(
@@ -1797,7 +1778,7 @@ if (
 
     scheduler.add_job(
 
-        refresh_all_pairs,
+        refresh_default_pair,
 
         "cron",
 
