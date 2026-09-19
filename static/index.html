@@ -6,7 +6,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>FX Forecast Dashboard</title>
+    <meta name="application-name" content="FX Forecast">
+
+    <title>FX Forecast</title>
 
     <!-- =========================================================
          PWA MANIFEST
@@ -1534,7 +1536,7 @@
             const selectedChangePercent = getSelectedModelChangePercent(data);
 
             // Update chrome that depends on the selected pair
-            document.title = pairLabel + " Tomorrow";
+            document.title = "FX Forecast";
 
             headline.textContent =
                 "Where does " + pairLabel + " land tomorrow?";

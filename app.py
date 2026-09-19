@@ -44,6 +44,7 @@ SELECTION_WINDOW = 5
 ROLLING_WINDOW_DAYS = 7
 MIN_ROLLING_DAYS = 3
 DEFAULT_PAIR = "USDINR"
+APP_NAME = "FX Forecast"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
