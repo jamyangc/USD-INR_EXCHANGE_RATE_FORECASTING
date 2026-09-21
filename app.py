@@ -1506,7 +1506,16 @@ app = Flask(
     static_folder="static"
 )
 
-CORS(app)
+CORS(
+    app,
+    resources={
+        r"/api/*": {
+            "origins": [
+                "https://localhost"
+            ]
+        }
+    }
+)
 
 
 @app.route("/")
