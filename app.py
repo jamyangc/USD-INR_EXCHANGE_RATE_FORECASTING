@@ -30,15 +30,15 @@ HORIZON = 1
 DAYS_IN_YEAR = 365
 MLP_LOGRET_CLIP = 0.02
 
-# historical_model_selection() retrains LightGBM, Ridge, Decision
-# Tree and MLP once per day in this window (a walk-forward
-# backtest), only used as a fallback for a pair that doesn't yet
-# have enough archived same-day forecasts for the cheap rolling-MAE
-# path. At 30 this meant up to ~120 model fits in a single request.
-# Dropped further to 5 after 10 still triggered OOM kills on
-# Render's free 512MB tier -- each fit's peak memory matters less
-# here than simply how many times these libraries' internals
-# allocate and (hopefully) release memory in a row.
+# historical_model_selection() retrains Ridge, Decision Tree and MLP
+# once per forecast refresh in a walk-forward backtest, over the last
+# SELECTION_WINDOW trading days. This is what lets the app pick a
+# "best" model on day one, instead of waiting for real future actual
+# prices to accumulate (that's what select_model_rolling_window()
+# further down is for, and it takes over automatically once enough
+# real history exists). Kept small (5, down from an original 30)
+# because each of those days retrains 3 models from scratch, and
+# Render's free 512MB tier OOM-killed the process at higher values.
 SELECTION_WINDOW = 5
 
 ROLLING_WINDOW_DAYS = 7
@@ -181,13 +181,6 @@ def stored_forecast_is_stale(pair_key):
     A stored forecast is stale once "today" has reached or passed the
     date it was predicting for -- at that point newer market data is
     available and a fresh forecast should be generated.
-
-    NOTE: this used to recompute next_business_day() from the file's
-    own saved `latest_available_date` and compare that against the
-    file's own saved `forecast_date`. Since `forecast_date` was
-    originally derived from that same `actual_date`, the two values
-    were always identical and the check could never return True after
-    the first run. Comparing against the real current date fixes it.
     """
     path = forecast_file_path(pair_key)
 
@@ -213,21 +206,6 @@ def stored_forecast_is_stale(pair_key):
 
 # ============================================================
 # PER-PAIR PIPELINE LOCKS
-#
-# The frontend fires /api/predict and /api/history at the same
-# time (Promise.all). Both routes used to independently check
-# stored_forecast_is_stale() and independently call
-# run_forecast_pipeline() when stale -- so on a cold pair, two
-# full pipelines (yfinance download + 2 World Bank calls + 4
-# model trainings, each) ran at once, competing for CPU on a
-# single-core free instance right when it's also cold-booting.
-# That's enough to blow well past a 45s client timeout, which
-# is why this showed up worst on mobile.
-#
-# ensure_fresh_forecast() below serializes refreshes per pair:
-# the second caller blocks on the lock instead of duplicating
-# the work, then re-checks staleness (the first caller already
-# refreshed it) before deciding whether to run again.
 # ============================================================
 
 _pipeline_locks = {}
@@ -253,9 +231,6 @@ def ensure_fresh_forecast(pair_key):
 
     with lock:
 
-        # Re-check after acquiring the lock -- if another request
-        # for this pair got here first and already refreshed it,
-        # there's nothing left to do.
         if stored_forecast_is_stale(pair_key):
             run_forecast_pipeline(pair_key)
 
@@ -337,16 +312,6 @@ def build_features(df):
     return df
 
 
-# LightGBM's create_model() removed here -- its C++ backend and
-# internal data structures had meaningfully more baseline memory
-# overhead than the remaining models, even at n_jobs=1 and a
-# trimmed n_estimators, and was the most likely contributor to the
-# OOM kills on Render's free 512MB tier. Ridge, Decision Tree, and
-# MLP already cover the "simple ML" bases without it, and removing
-# the import entirely also drops lightgbm's baseline memory cost
-# before any training even starts.
-
-
 def create_ridge_model():
     return Ridge(
         alpha=1.0,
@@ -363,13 +328,6 @@ def create_tree_model():
 
 
 def create_mlp_model():
-    # Switched from lbfgs to adam: lbfgs keeps an approximation of
-    # the Hessian in memory across the whole fit, which is more
-    # memory-hungry than adam's simple per-batch gradient updates --
-    # worth the trade given this is refit SELECTION_WINDOW times
-    # per backtest on a host that's already hitting its RAM ceiling.
-    # max_iter lowered accordingly since adam needs more small steps
-    # rather than lbfgs's fewer large ones, but each step is cheap.
     return MLPRegressor(
         hidden_layer_sizes=(8,),
         activation="relu",
@@ -443,18 +401,13 @@ def select_model_rolling_window(
     """
     Picks the "best" model by averaging each model's absolute
     forecasting error over the last `window` trading days that have
-    both an archived forecast AND a now-known actual price -- rather
-    than just comparing on the single most recent day.
-
-    A single day's error is noisy: a model can "win" purely by luck
-    on any given day. Averaging over a rolling window means a model
-    has to be consistently closer to actual, not just lucky once, to
-    get selected -- so the pick changes less often and is more
-    trustworthy day to day.
+    both an archived forecast AND a now-known actual price.
 
     Returns None if fewer than `min_days` matched days are available
-    yet (e.g. the app is newly deployed), so the caller can fall back
-    to the walk-forward backtest instead.
+    yet, so the caller falls back to historical_model_selection()
+    (a walk-forward backtest) instead. Once enough real forecast-vs-
+    actual pairs exist, this rolling method takes over automatically,
+    since it reflects genuine live performance rather than a backtest.
     """
 
     archive = load_forecast_archive(pair_key)
@@ -462,7 +415,6 @@ def select_model_rolling_window(
     if not archive:
         return None
 
-    # date string -> actual price, from the full price history
     date_to_price = dict(
         zip(
             df["date"].dt.strftime("%Y-%m-%d"),
@@ -489,7 +441,6 @@ def select_model_rolling_window(
     if len(matched) < min_days:
         return None
 
-    # Most recent `window` matched trading days
     matched.sort(key=lambda entry: entry[0])
     matched = matched[-window:]
 
@@ -558,9 +509,19 @@ def historical_model_selection(
     ppp_data,
     rates
 ):
-    # Live requests must not run a historical retraining backtest.
-    # Selection is taken from archived forecasts once actual prices exist.
-    return None
+    """
+    Walk-forward backtest over the last SELECTION_WINDOW trading
+    days: for each of those days, train every model on everything
+    before it, predict that day, and compare to what actually
+    happened. The model with the lowest mean absolute error across
+    this window is picked as the initial "best" model -- this is
+    what lets a freshly deployed pair show a real answer immediately,
+    instead of showing "Pending" until enough live days accumulate.
+
+    Once select_model_rolling_window() above has enough real
+    forecast-vs-actual history of its own, it takes priority over
+    this backtest automatically (see run_forecast_pipeline()).
+    """
 
     usable = (
         df
@@ -785,13 +746,9 @@ def historical_model_selection(
                 f"Historical IRP error: {e}"
             )
 
-        # Explicit cleanup between backtest days. This loop creates
-        # a brand-new LightGBM/Ridge/Tree/MLP object on every single
-        # iteration; Python's garbage collector doesn't always keep
-        # up with that churn fast enough to stay under a tight
-        # memory ceiling (e.g. Render's free-tier 512MB), so we
-        # force a collection pass explicitly rather than letting
-        # objects pile up across all SELECTION_WINDOW iterations.
+        # Explicit cleanup between backtest days -- see comment on
+        # SELECTION_WINDOW above for why this matters on a tight
+        # memory ceiling.
         gc.collect()
 
     mae = {}
@@ -1265,12 +1222,6 @@ def run_forecast_pipeline(
         selected_model_forecast = None
         selected_model_direction = None
 
-    # ridge_direction / ridge_change_percent replace the old
-    # lightgbm_direction / lightgbm_change_percent fields now that
-    # LightGBM has been removed. Ridge is the lightest remaining ML
-    # model and plays the same "always-available fallback" role the
-    # frontend previously leaned on LightGBM for when no selection
-    # has been made yet.
     if forecast_ridge > last_known_price:
         ridge_direction = "UP"
 
@@ -1742,14 +1693,6 @@ def refresh_cron():
 
 # ============================================================
 # BACKGROUND SCHEDULER
-#
-# NOTE: this used to only pre-warm DEFAULT_PAIR ("USDINR"), so
-# every other pair in PAIRS (USDJPY, USDCHF, USDCAD, EURUSD,
-# GBPUSD, AUDUSD, NZDUSD) still computed cold inside whichever
-# user's request happened to find it stale -- exactly the slow
-# path this scheduler exists to avoid. refresh_all_pairs() now
-# walks every configured pair so the JSON cache is warm for all
-# of them, not just the default.
 # ============================================================
 
 scheduler = None
@@ -1787,7 +1730,7 @@ if (
 
     scheduler.add_job(
 
-        refresh_default_pair,
+        refresh_all_pairs,
 
         "cron",
 
