@@ -1,9 +1,20 @@
 import warnings
 warnings.filterwarnings("ignore")
 
+import os
+
+# Must be set before numpy/sklearn are imported. Multi-threaded BLAS
+# can sum floating-point numbers in a different order across process
+# restarts, producing tiny numerical differences that compound in
+# iterative solvers. Pinning to a single thread makes every run --
+# regardless of which Render restart triggered it -- produce
+# bit-identical results for the same input data.
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+
 import gc
 import json
-import os
 from datetime import datetime
 
 import numpy as np
@@ -328,12 +339,21 @@ def create_tree_model():
 
 
 def create_mlp_model():
+    # lbfgs instead of adam: adam's minibatch shuffling and gradient
+    # updates aren't perfectly reproducible run-to-run even with a
+    # fixed random_state, which is what let different Render restarts
+    # land on different final weights (and therefore different
+    # forecasts / different "best model" picks) for identical input
+    # data. lbfgs is a deterministic optimizer -- same data in, same
+    # weights out, every time. The network here is tiny (8 hidden
+    # units, 10 features) so lbfgs's extra memory for its Hessian
+    # approximation is negligible.
     return MLPRegressor(
         hidden_layer_sizes=(8,),
         activation="relu",
-        solver="adam",
+        solver="lbfgs",
         alpha=0.01,
-        max_iter=100,
+        max_iter=500,
         random_state=RANDOM_STATE
     )
 
