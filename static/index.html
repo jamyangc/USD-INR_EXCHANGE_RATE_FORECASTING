@@ -1169,7 +1169,7 @@
         // Request prediction first. It may train models and refresh the cache.
         // History is requested only after prediction has finished.
         const predictRes = await fetch(
-            `${API_BASE}/api/predict?pair=${pair}`,
+            `${API_BASE}/api/predict?pair=${pair}&_t=${Date.now()}`,
             { cache: "no-store" }
         );
 
@@ -1188,7 +1188,7 @@
 
         // The prediction request has already refreshed the history file.
         const historyRes = await fetch(
-            `${API_BASE}/api/history?pair=${pair}`,
+            `${API_BASE}/api/history?pair=${pair}&_t=${Date.now()}`,
             { cache: "no-store" }
         );
 
@@ -1993,40 +1993,9 @@
         /* =========================================================
            REGISTER SERVICE WORKER
         ========================================================== */
+        // Service worker disabled for Capacitor Android app.
+// Capacitor handles the local app shell directly.
 
-        if ("serviceWorker" in navigator) {
-
-            window.addEventListener(
-                "load",
-                function () {
-
-                    navigator.serviceWorker
-                        .register("/service-worker.js")
-                        .then(
-                            function (reg) {
-
-                                console.log(
-                                    "Service worker registered:",
-                                    reg.scope
-                                );
-
-                            }
-                        )
-                        .catch(
-                            function (err) {
-
-                                console.error(
-                                    "Service worker registration failed:",
-                                    err
-                                );
-
-                            }
-                        );
-
-                }
-            );
-
-        }
 
 
         /* =========================================================
