@@ -208,8 +208,13 @@ def stored_forecast_is_stale(pair_key):
             return True
 
         today = pd.Timestamp.now().normalize()
+        saved_forecast_date = pd.Timestamp(forecast_date).normalize()
 
-        return pd.Timestamp(forecast_date) <= today
+        # Keep one forecast for the entire forecast date.
+        # A new forecast is generated only after that date has passed.
+        # This prevents different devices from triggering repeated
+        # recalculations and receiving different predictions/models.
+        return saved_forecast_date < today
 
     except Exception:
         return True
@@ -1576,9 +1581,18 @@ def predict():
             encoding="utf-8"
         ) as f:
 
-            return jsonify(
-                json.load(f)
-            )
+            data = json.load(f)
+
+        response = jsonify(data)
+        response.headers["Cache-Control"] = "no-store"
+
+        return response
+
+    except FileNotFoundError:
+
+        return jsonify({
+            "error": "Forecast file not found."
+        }), 404
 
     except Exception as e:
 
@@ -1604,26 +1618,21 @@ def history():
 
     try:
 
-        ensure_fresh_forecast(
-            pair_key
-        )
-
-    except Exception as e:
-
-        return jsonify({
-            "error": str(e)
-        }), 500
-
-    try:
-
         with open(
             path,
             encoding="utf-8"
         ) as f:
 
-            return jsonify(
-                json.load(f)
-            )
+            data = json.load(f)
+
+        response = jsonify(data)
+        response.headers["Cache-Control"] = "no-store"
+
+        return response
+
+    except FileNotFoundError:
+
+        return jsonify([])
 
     except Exception as e:
 
