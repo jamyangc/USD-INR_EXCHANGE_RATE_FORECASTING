@@ -621,7 +621,7 @@
         <span>DAILY SELECTED MODEL + RANDOM WALK BENCHMARK</span>
 
         <span>
-            ALL MODELS RUN IN THE BACKEND · ONLY THE BEST MODEL IS DISPLAYED
+            ALL MODELS RUN IN THE BACKEND · ONLY THE SELECTED MODEL IS DISPLAYED
         </span>
 
         <span>DAILY TRADING-DAY FORECAST</span>
@@ -715,14 +715,6 @@
         ========================================================== */
 
         const MODELS = [
-
-            {
-                key: "lightgbm",
-                label: "LightGBM",
-                role: "model",
-                color: "#a9822f",
-                width: 2.5
-            },
 
             {
                 key: "random_walk",
@@ -857,7 +849,6 @@
         ========================================================== */
 
         const FORECAST_MODEL_KEYS = [
-            "lightgbm",
             "ppp",
             "irp",
             "ridge",
@@ -866,7 +857,6 @@
         ];
 
         const MODEL_LABELS = {
-            lightgbm: "LightGBM",
             ppp: "PPP",
             irp: "IRP",
             ridge: "Ridge",
@@ -1406,7 +1396,7 @@
             const selectedModelLabel =
                 selectedModel
                     ? selectedModel.label
-                    : "Best model pending";
+                    : "Selected model pending";
 
             const selectedForecastValue =
                 selectedModel
@@ -1417,7 +1407,6 @@
                 selectedModel
                     ? (
                         data[selectedModelKey + "_direction"]
-                        || data.lightgbm_direction
                         || "FLAT"
                     )
                     : "FLAT";
@@ -1476,18 +1465,13 @@
                         · expected move
 
                         ${
-                            Number(
-                                data[selectedModelKey + "_change_percent"]
-                            ) > 0
-                                ? "+"
-                                : ""
-                        }
-
-                        ${
-                            selectedModel
-                                ? Number(
-                                    data[selectedModelKey + "_change_percent"]
-                                ).toFixed(4)
+                            Number.isFinite(Number(selectedForecastValue)) &&
+                            Number.isFinite(Number(data.latest_price)) &&
+                            Number(data.latest_price) !== 0
+                                ? (
+                                    ((Number(selectedForecastValue) - Number(data.latest_price))
+                                        / Number(data.latest_price)) * 100
+                                  ).toFixed(2)
                                 : "n/a"
                         }%
 
@@ -1573,7 +1557,7 @@
                                 <div class="panel hero-model">
 
                                     <p class="label">
-                                        Best model
+                                        Selected model
                                     </p>
 
                                     <p class="value">
