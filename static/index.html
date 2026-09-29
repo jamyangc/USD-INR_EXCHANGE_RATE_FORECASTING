@@ -21,7 +21,6 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="FX Forecast">
 
-
     <!-- =========================================================
          CHART.JS
     ========================================================== -->
@@ -196,13 +195,12 @@
 
         /* =========================================================
            ERROR REFRESH BUTTON
-           
-           This button is hidden during normal use.
-           It appears only when the forecast fails.
+
+           Hidden during normal dashboard use.
+           Appears only when forecast loading fails.
         ========================================================== */
 
         .error-refresh-btn {
-
             display: none;
 
             margin-top: 20px;
@@ -226,36 +224,30 @@
             cursor: pointer;
 
             transition: all 0.15s ease;
-
         }
 
-
         .error-refresh-btn:hover {
-
             background: var(--ink);
 
             border-color: var(--ink);
 
             color: white;
-
         }
-
 
         .error-refresh-btn:active {
-
             transform: scale(0.97);
-
         }
 
-
         .error-refresh-btn:disabled {
-
             opacity: 0.6;
 
             cursor: wait;
-
         }
 
+
+        /* =========================================================
+           HEADINGS
+        ========================================================== */
 
         h1 {
             font-size: 2.6rem;
@@ -495,52 +487,7 @@
 
 
         /* =========================================================
-           CHART BUTTONS
-        ========================================================== */
-
-        .chart-controls {
-            display: flex;
-
-            gap: 8px;
-
-            flex-wrap: wrap;
-        }
-
-        .chart-btn {
-            border: 1px solid var(--line);
-
-            background: #ffffff;
-
-            color: var(--ink);
-
-            padding: 8px 14px;
-
-            border-radius: 5px;
-
-            font-family: 'Courier New', monospace;
-
-            font-size: 11px;
-
-            cursor: pointer;
-
-            transition: all 0.15s ease;
-        }
-
-        .chart-btn:hover {
-            background: var(--ink);
-
-            border-color: var(--ink);
-
-            color: white;
-        }
-
-        .chart-btn:active {
-            transform: scale(0.97);
-        }
-
-
-        /* =========================================================
-           HISTORICAL FX CHART
+           CHART
         ========================================================== */
 
         .chart-container {
@@ -583,11 +530,6 @@
 
             line-height: 1.7;
         }
-
-
-        /* =========================================================
-           CHART STATUS
-        ========================================================== */
 
         .chart-status {
             margin-top: 8px;
@@ -849,49 +791,37 @@
             {
                 key: "random_walk",
                 label: "Random Walk",
-                role: "benchmark",
-                color: "#6b6a5f",
-                width: 1.5
+                role: "benchmark"
             },
 
             {
                 key: "ppp",
                 label: "PPP",
-                role: "model",
-                color: "#2f6d9f",
-                width: 1.5
+                role: "model"
             },
 
             {
                 key: "irp",
                 label: "IRP",
-                role: "model",
-                color: "#7a4fa0",
-                width: 1.5
+                role: "model"
             },
 
             {
                 key: "ridge",
                 label: "Ridge",
-                role: "model",
-                color: "#2f6d4f",
-                width: 1.5
+                role: "model"
             },
 
             {
                 key: "decision_tree",
                 label: "Decision Tree",
-                role: "model",
-                color: "#a1372f",
-                width: 1.5
+                role: "model"
             },
 
             {
                 key: "mlp",
                 label: "MLP",
-                role: "model",
-                color: "#c26b1f",
-                width: 1.5
+                role: "model"
             }
 
         ];
@@ -972,7 +902,7 @@
 
 
         /* =========================================================
-           DAILY MODEL SELECTION
+           MODEL SELECTION
         ========================================================== */
 
         const FORECAST_MODEL_KEYS = [
@@ -1198,7 +1128,7 @@
 
 
         /* =========================================================
-           DIRECTION PILL
+           DIRECTION
         ========================================================== */
 
         function pill(direction) {
@@ -1245,8 +1175,6 @@
 
         /* =========================================================
            REFRESH CURRENT PAIR
-           
-           Used ONLY by the error-screen Refresh button.
         ========================================================== */
 
         async function refreshPair(pair) {
@@ -1296,11 +1224,6 @@
                 const data =
                     await response.json();
 
-
-                /*
-                 * Make sure the response contains
-                 * something usable before accepting it.
-                 */
 
                 if (
                     !data
@@ -1456,16 +1379,6 @@
 
             try {
 
-                /*
-                 * Call /api/refresh directly.
-                 *
-                 * We intentionally do NOT call
-                 * /api/predict again immediately.
-                 *
-                 * This allows the refresh button to
-                 * recover from a failed /api/predict call.
-                 */
-
                 const result =
                     await refreshPair(
                         currentPair
@@ -1485,12 +1398,6 @@
                     let refreshedHistory =
                         [];
 
-
-                    /*
-                     * Historical chart is optional.
-                     * If it fails, the forecast can
-                     * still be displayed.
-                     */
 
                     try {
 
@@ -1531,10 +1438,6 @@
                     }
 
 
-                    /*
-                     * Save refreshed forecast.
-                     */
-
                     localStorage.setItem(
 
                         forecastStorageKey(
@@ -1548,10 +1451,6 @@
                     );
 
 
-                    /*
-                     * Save refreshed history.
-                     */
-
                     localStorage.setItem(
 
                         historyStorageKey(
@@ -1564,10 +1463,6 @@
 
                     );
 
-
-                    /*
-                     * Display refreshed data.
-                     */
 
                     render(
 
@@ -1590,11 +1485,6 @@
                 }
 
                 else {
-
-                    /*
-                     * Refresh itself failed.
-                     * Keep the button visible.
-                     */
 
                     showErrorRefreshButton();
 
@@ -1641,9 +1531,9 @@
 
 
         /* =========================================================
-           LOAD PAIR LIST
+           LOAD PAIRS
            
-           EMU IS REMOVED HERE.
+           EMU IS REMOVED.
         ========================================================== */
 
         async function loadPairs() {
@@ -1675,10 +1565,6 @@
                     await res.json();
 
 
-                /*
-                 * Remove EMU from online list.
-                 */
-
                 availablePairs =
                     availablePairs.filter(
                         function (p) {
@@ -1688,10 +1574,6 @@
                         }
                     );
 
-
-                /*
-                 * Save cleaned pair list.
-                 */
 
                 localStorage.setItem(
 
@@ -1753,10 +1635,6 @@
                 }
 
 
-                /*
-                 * Remove EMU from saved list.
-                 */
-
                 if (
                     Array.isArray(
                         availablePairs
@@ -1774,10 +1652,6 @@
 
                 }
 
-
-                /*
-                 * Fallback pair.
-                 */
 
                 if (
                     !availablePairs
@@ -1804,10 +1678,6 @@
 
             }
 
-
-            /*
-             * Final EMU protection.
-             */
 
             availablePairs =
                 availablePairs.filter(
@@ -1863,17 +1733,6 @@
 
 
         /* =========================================================
-           PREFETCH ALL PAIRS DISABLED
-        ========================================================== */
-
-        async function prefetchAllPairs() {
-
-            return;
-
-        }
-
-
-        /* =========================================================
            SWITCH PAIR
         ========================================================== */
 
@@ -1887,10 +1746,6 @@
 
             }
 
-
-            /*
-             * Never allow EMU.
-             */
 
             if (
                 pairKey === "EMU"
@@ -1913,11 +1768,6 @@
 
             );
 
-
-            /*
-             * Hide error Refresh button while
-             * loading a different pair.
-             */
 
             hideErrorRefreshButton();
 
@@ -1954,18 +1804,133 @@
                 currentPair;
 
 
+            hideErrorRefreshButton();
+
+
             /*
-             * Hide error button while attempting
-             * the normal forecast request.
+             * If the device is already offline,
+             * don't waste time trying the API.
+             *
+             * Load saved data directly.
              */
 
-            hideErrorRefreshButton();
+            if (!navigator.onLine) {
+
+                const savedData =
+                    localStorage.getItem(
+
+                        forecastStorageKey(pair)
+
+                    );
+
+
+                const savedHistory =
+                    localStorage.getItem(
+
+                        historyStorageKey(pair)
+
+                    );
+
+
+                if (savedData) {
+
+                    try {
+
+                        const data =
+                            JSON.parse(
+                                savedData
+                            );
+
+
+                        const history =
+                            savedHistory
+
+                                ? JSON.parse(
+                                    savedHistory
+                                )
+
+                                : [];
+
+
+                        render(
+                            data,
+                            history
+                        );
+
+
+                        if (
+                            syncStatus
+                        ) {
+
+                            syncStatus.textContent =
+                                "· last data saved";
+
+                        }
+
+
+                        return;
+
+                    }
+
+                    catch (storageError) {
+
+                        console.error(
+
+                            "Saved browser data is corrupted:",
+
+                            storageError
+
+                        );
+
+                    }
+
+                }
+
+
+                /*
+                 * No saved data while offline.
+                 */
+
+                content.className =
+                    "error";
+
+
+                content.innerHTML = `
+
+                    <strong>
+                        Could not load today's forecast.
+                    </strong>
+
+                    <br><br>
+
+                    Please connect to the internet once
+                    so the latest forecast can be saved.
+
+                `;
+
+
+                showErrorRefreshButton();
+
+
+                if (
+                    syncStatus
+                ) {
+
+                    syncStatus.textContent =
+                        "· last data saved";
+
+                }
+
+
+                return;
+
+            }
 
 
             try {
 
                 /*
-                 * Request prediction first.
+                 * Request prediction.
                  */
 
                 const predictRes =
@@ -2049,7 +2014,7 @@
 
 
                 /*
-                 * Evaluate previous saved forecast.
+                 * Evaluate previous forecast.
                  */
 
                 const previousSavedRaw =
@@ -2103,7 +2068,7 @@
 
 
                 /*
-                 * Select model with smallest
+                 * Select model based on
                  * previous absolute error.
                  */
 
@@ -2155,26 +2120,23 @@
                 );
 
 
-                /*
-                 * Display fresh data.
-                 */
-
                 render(
                     data,
                     history
                 );
 
 
+                /*
+                 * IMPORTANT:
+                 * Successful API request = live.
+                 */
+
                 if (
                     syncStatus
                 ) {
 
                     syncStatus.textContent =
-                        navigator.onLine
-
-                            ? "· live"
-
-                            : "· offline (saved data)";
+                        "· live";
 
                 }
 
@@ -2193,7 +2155,7 @@
 
 
                 /*
-                 * Try saved forecast first.
+                 * Try saved forecast.
                  */
 
                 const savedData =
@@ -2240,12 +2202,17 @@
                         );
 
 
+                        /*
+                         * API failed, so this is
+                         * NOT live data.
+                         */
+
                         if (
                             syncStatus
                         ) {
 
                             syncStatus.textContent =
-                                "· offline (last saved data)";
+                                "· last data saved";
 
                         }
 
@@ -2273,7 +2240,6 @@
 
                 /*
                  * No saved data.
-                 * Show error and Refresh button.
                  */
 
                 console.error(
@@ -2310,11 +2276,7 @@
 
 
                 /*
-                 * THIS IS THE IMPORTANT PART.
-                 *
-                 * The button is outside content,
-                 * so replacing content.innerHTML
-                 * cannot remove it.
+                 * Show Refresh button ONLY on error.
                  */
 
                 showErrorRefreshButton();
@@ -2344,8 +2306,8 @@
         ) {
 
             /*
-             * Forecast successfully loaded.
-             * Hide the error Refresh button.
+             * Successful rendering.
+             * Hide error Refresh button.
              */
 
             hideErrorRefreshButton();
@@ -2563,6 +2525,12 @@
                     </div>
 
 
+                    <!-- =================================================
+                         PAIR SELECTOR
+                         
+                         NO REFRESH BUTTON HERE.
+                    ================================================== -->
+
                     <div class="pair-switcher">
 
                         <span class="hint">
@@ -2740,6 +2708,12 @@
                     }
 
 
+                    <!-- =================================================
+                         RANDOM WALK
+                         
+                         ONLY BENCHMARK.
+                    ================================================== -->
+
                     <div
                         class="panel benchmark-panel">
 
@@ -2877,7 +2851,7 @@
 
 
         /* =========================================================
-           CREATE HISTORICAL FX CHART
+           HISTORICAL CHART
         ========================================================== */
 
         function createInteractiveChart(
@@ -2931,10 +2905,6 @@
 
             }
 
-
-            /*
-             * Keep only valid closing-rate observations.
-             */
 
             const cleanHistory =
                 history
@@ -3042,12 +3012,10 @@
 
                             type: "line",
 
-
                             data: {
 
                                 labels:
                                     labels,
-
 
                                 datasets: [
 
@@ -3062,21 +3030,16 @@
                                                 currentPair
                                             ),
 
-
                                         data:
                                             values,
-
 
                                         borderColor:
                                             "#1a2332",
 
-
                                         backgroundColor:
                                             "rgba(26,35,50,0.08)",
 
-
                                         borderWidth: 2,
-
 
                                         pointRadius:
 
@@ -3086,18 +3049,14 @@
 
                                                 : 2,
 
-
                                         pointHoverRadius:
                                             5,
-
 
                                         pointHitRadius:
                                             12,
 
-
                                         tension:
                                             0.15,
-
 
                                         fill:
                                             true
@@ -3108,16 +3067,13 @@
 
                             },
 
-
                             options: {
 
                                 responsive:
                                     true,
 
-
                                 maintainAspectRatio:
                                     false,
-
 
                                 interaction: {
 
@@ -3128,7 +3084,6 @@
                                         false
 
                                 },
-
 
                                 plugins: {
 
@@ -3142,12 +3097,10 @@
 
                                     },
 
-
                                     tooltip: {
 
                                         enabled:
                                             true,
-
 
                                         callbacks: {
 
@@ -3245,7 +3198,6 @@
 
                                 },
 
-
                                 scales: {
 
                                     x: {
@@ -3257,20 +3209,16 @@
 
                                         },
 
-
                                         ticks: {
 
                                             color:
                                                 "#6b6a5f",
 
-
                                             maxTicksLimit:
                                                 8,
 
-
                                             autoSkip:
                                                 true,
-
 
                                             callback:
                                                 function (
@@ -3332,7 +3280,6 @@
 
                                     },
 
-
                                     y: {
 
                                         grid: {
@@ -3342,12 +3289,10 @@
 
                                         },
 
-
                                         ticks: {
 
                                             color:
                                                 "#6b6a5f",
-
 
                                             callback:
                                                 function (
@@ -3430,7 +3375,7 @@
 
 
         /* =========================================================
-           ONLINE / OFFLINE EVENTS
+           ONLINE / OFFLINE STATUS
         ========================================================== */
 
         window.addEventListener(
@@ -3444,7 +3389,7 @@
                 ) {
 
                     syncStatus.textContent =
-                        "· offline (last saved data)";
+                        "· last data saved";
 
                 }
 
@@ -3459,11 +3404,41 @@
 
             function () {
 
+                if (
+                    syncStatus
+                ) {
+
+                    syncStatus.textContent =
+                        "· updating...";
+
+                }
+
+
                 loadDashboard();
 
             }
 
         );
+
+
+        /* =========================================================
+           CHECK CONNECTION WHEN APP OPENS
+        ========================================================== */
+
+        if (
+            !navigator.onLine
+        ) {
+
+            if (
+                syncStatus
+            ) {
+
+                syncStatus.textContent =
+                    "· last data saved";
+
+            }
+
+        }
 
 
         /* =========================================================
@@ -3489,8 +3464,10 @@
            SERVICE WORKER
         ========================================================== */
 
-        // Service worker disabled for Capacitor Android app.
-        // Capacitor handles the local app shell directly.
+        /*
+         * Service worker disabled for Capacitor Android.
+         * Capacitor handles the local app shell directly.
+         */
 
 
         /* =========================================================
