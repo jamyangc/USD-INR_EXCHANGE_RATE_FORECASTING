@@ -8,10 +8,6 @@
 
     <title>FX Forecast Dashboard</title>
 
-    <!-- =========================================================
-         PWA MANIFEST
-    ========================================================== -->
-
     <link rel="manifest" href="/static/manifest.json">
     <meta name="theme-color" content="#f6f4ee">
 
@@ -21,19 +17,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="FX Forecast">
 
-
-    <!-- =========================================================
-         CHART.JS
-    ========================================================== -->
-
+    <!-- CHART.JS -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 
-
     <style>
-
-        /* =========================================================
-           VARIABLES
-        ========================================================== */
 
         :root {
             --ink: #1a2332;
@@ -54,10 +41,6 @@
                 0 4px 14px rgba(26,35,50,0.05);
         }
 
-
-        /* =========================================================
-           GLOBAL
-        ========================================================== */
 
         * {
             box-sizing: border-box;
@@ -196,6 +179,7 @@
 
         /* =========================================================
            REFRESH BUTTON
+           Used ONLY on the error screen.
         ========================================================== */
 
         .refresh-btn {
@@ -205,7 +189,7 @@
 
             color: var(--ink);
 
-            padding: 7px 12px;
+            padding: 9px 16px;
 
             border-radius: 5px;
 
@@ -635,6 +619,10 @@
 
         .error {
             color: var(--down);
+        }
+
+        .error .refresh-btn {
+            margin-top: 8px;
         }
 
 
@@ -1204,13 +1192,13 @@
 
         /* =========================================================
            REFRESH CURRENT PAIR
+           Used only by the error-screen Refresh button.
         ========================================================== */
 
         async function refreshPair(pair) {
 
             /*
-             * EMU is not supported because its World Bank
-             * CPI data is not usable.
+             * EMU is not supported.
              */
 
             if (pair === "EMU") {
@@ -1309,14 +1297,10 @@
 
         /* =========================================================
            LOAD PAIR LIST
-           
            EMU IS REMOVED HERE.
         ========================================================== */
 
         async function loadPairs() {
-
-            let fetchedOnline = false;
-
 
             try {
 
@@ -1345,9 +1329,9 @@
                     await res.json();
 
 
-                /* =================================================
-                   REMOVE EMU FROM ONLINE LIST
-                ================================================= */
+                /*
+                 * Remove EMU from online list.
+                 */
 
                 availablePairs =
                     availablePairs.filter(
@@ -1358,14 +1342,6 @@
                         }
                     );
 
-
-                fetchedOnline = true;
-
-
-                /*
-                 * Save the cleaned list so EMU is not stored
-                 * in the browser's offline pair list.
-                 */
 
                 localStorage.setItem(
 
@@ -1428,7 +1404,7 @@
 
 
                 /*
-                 * Remove EMU from the saved list too.
+                 * Remove EMU from saved list too.
                  */
 
                 if (
@@ -1557,10 +1533,6 @@
 
             }
 
-
-            /*
-             * Never allow EMU to be selected.
-             */
 
             if (
                 pairKey === "EMU"
@@ -1927,6 +1899,7 @@
 
                 /* =================================================
                    NO INTERNET + NO SAVED DATA
+                   SHOW REFRESH BUTTON HERE.
                 ================================================== */
 
                 console.error(
@@ -1959,6 +1932,17 @@
                         ${error.message}
                     </small>
 
+                    <br><br>
+
+                    <button
+                        id="errorRefreshButton"
+                        class="refresh-btn"
+                        type="button">
+
+                        ↻ Refresh
+
+                    </button>
+
                 `;
 
 
@@ -1971,7 +1955,544 @@
 
                 }
 
+
+                /* =================================================
+                   ERROR REFRESH BUTTON
+                ================================================== */
+
+                const errorRefreshButton =
+                    document.getElementById(
+                        "errorRefreshButton"
+                    );
+
+
+                if (
+                    errorRefreshButton
+                ) {
+
+                    errorRefreshButton.addEventListener(
+
+                        "click",
+
+                        async function () {
+
+                            errorRefreshButton.disabled =
+                                true;
+
+
+                            errorRefreshButton.textContent =
+                                "↻ Refreshing...";
+
+
+                            if (
+                                syncStatus
+                            ) {
+
+                                syncStatus.textContent =
+                                    "· refreshing";
+
+                            }
+
+
+                            try {
+
+                                /*
+                                 * Call /api/refresh directly.
+                                 * We do NOT immediately call
+                                 * /api/predict again because
+                                 * /api/predict may be the endpoint
+                                 * that caused the original error.
+                                 */
+
+                                const result =
+                                    await refreshPair(
+                                        currentPair
+                                    );
+
+
+                                if (
+                                    result.success
+                                    &&
+                                    result.data
+                                ) {
+
+                                    const refreshedData =
+                                        result.data;
+
+
+                                    /*
+                                     * Try to get historical
+                                     * data for the chart.
+                                     */
+
+                                    let refreshedHistory =
+                                        [];
+
+
+                                    try {
+
+                                        const historyRes =
+                                            await fetch(
+
+                                                `${API_BASE}/api/history?pair=${encodeURIComponent(currentPair)}&_t=${Date.now()}`,
+
+                                                {
+                                                    cache:
+                                                        "no-store"
+                                                }
+
+                                            );
+
+
+                                        if (
+                                            historyRes.ok
+                                        ) {
+
+                                            refreshedHistory =
+                                                await historyRes.json();
+
+                                        }
+
+                                    }
+
+                                    catch (
+                                        historyError
+                                    ) {
+
+                                        console.warn(
+
+                                            "Could not refresh historical data:",
+
+                                            historyError
+
+                                        );
+
+                                    }
+
+
+                                    /*
+                                     * Save refreshed data.
+                                     */
+
+                                    localStorage.setItem(
+
+                                        forecastStorageKey(
+                                            currentPair
+                                        ),
+
+                                        JSON.stringify(
+                                            refreshedData
+                                        )
+
+                                    );
+
+
+                                    localStorage.setItem(
+
+                                        historyStorageKey(
+                                            currentPair
+                                        ),
+
+                                        JSON.stringify(
+                                            refreshedHistory
+                                        )
+
+                                    );
+
+
+                                    /*
+                                     * Display the successful
+                                     * refreshed forecast directly.
+                                     */
+
+                                    render(
+
+                                        refreshedData,
+
+                                        refreshedHistory
+
+                                    );
+
+
+                                    if (
+                                        syncStatus
+                                    ) {
+
+                                        syncStatus.textContent =
+                                            "· live";
+
+                                    }
+
+                                }
+
+                                else {
+
+                                    /*
+                                     * Refresh failed.
+                                     * Show the error screen again.
+                                     */
+
+                                    content.className =
+                                        "error";
+
+
+                                    content.innerHTML = `
+
+                                        <strong>
+                                            Could not load today's forecast.
+                                        </strong>
+
+                                        <br><br>
+
+                                        Refresh failed.
+
+                                        <br><br>
+
+                                        <small>
+                                            ${
+                                                result.error
+                                                ||
+                                                "Please check your internet connection and try again."
+                                            }
+                                        </small>
+
+                                        <br><br>
+
+                                        <button
+                                            id="errorRefreshButton"
+                                            class="refresh-btn"
+                                            type="button">
+
+                                            ↻ Refresh
+
+                                        </button>
+
+                                    `;
+
+
+                                    /*
+                                     * Re-attach the button
+                                     * because the HTML was replaced.
+                                     */
+
+                                    attachErrorRefreshButton();
+
+                                }
+
+                            }
+
+                            catch (refreshError) {
+
+                                console.error(
+
+                                    "Error refresh failed:",
+
+                                    refreshError
+
+                                );
+
+
+                                content.className =
+                                    "error";
+
+
+                                content.innerHTML = `
+
+                                    <strong>
+                                        Could not load today's forecast.
+                                    </strong>
+
+                                    <br><br>
+
+                                    Refresh failed.
+
+                                    <br><br>
+
+                                    <small>
+                                        ${refreshError.message}
+                                    </small>
+
+                                    <br><br>
+
+                                    <button
+                                        id="errorRefreshButton"
+                                        class="refresh-btn"
+                                        type="button">
+
+                                        ↻ Refresh
+
+                                    </button>
+
+                                `;
+
+
+                                attachErrorRefreshButton();
+
+                            }
+
+                        }
+
+                    );
+
+                }
+
             }
+
+        }
+
+
+        /* =========================================================
+           ATTACH ERROR REFRESH BUTTON
+        ========================================================== */
+
+        function attachErrorRefreshButton() {
+
+            const errorRefreshButton =
+                document.getElementById(
+                    "errorRefreshButton"
+                );
+
+
+            if (
+                !errorRefreshButton
+            ) {
+
+                return;
+
+            }
+
+
+            errorRefreshButton.addEventListener(
+
+                "click",
+
+                async function () {
+
+                    errorRefreshButton.disabled =
+                        true;
+
+
+                    errorRefreshButton.textContent =
+                        "↻ Refreshing...";
+
+
+                    if (
+                        syncStatus
+                    ) {
+
+                        syncStatus.textContent =
+                            "· refreshing";
+
+                    }
+
+
+                    try {
+
+                        const result =
+                            await refreshPair(
+                                currentPair
+                            );
+
+
+                        if (
+                            result.success
+                            &&
+                            result.data
+                        ) {
+
+                            const refreshedData =
+                                result.data;
+
+
+                            let refreshedHistory =
+                                [];
+
+
+                            try {
+
+                                const historyRes =
+                                    await fetch(
+
+                                        `${API_BASE}/api/history?pair=${encodeURIComponent(currentPair)}&_t=${Date.now()}`,
+
+                                        {
+                                            cache:
+                                                "no-store"
+                                        }
+
+                                    );
+
+
+                                if (
+                                    historyRes.ok
+                                ) {
+
+                                    refreshedHistory =
+                                        await historyRes.json();
+
+                                }
+
+                            }
+
+                            catch (
+                                historyError
+                            ) {
+
+                                console.warn(
+
+                                    "Could not refresh historical data:",
+
+                                    historyError
+
+                                );
+
+                            }
+
+
+                            localStorage.setItem(
+
+                                forecastStorageKey(
+                                    currentPair
+                                ),
+
+                                JSON.stringify(
+                                    refreshedData
+                                )
+
+                            );
+
+
+                            localStorage.setItem(
+
+                                historyStorageKey(
+                                    currentPair
+                                ),
+
+                                JSON.stringify(
+                                    refreshedHistory
+                                )
+
+                            );
+
+
+                            render(
+
+                                refreshedData,
+
+                                refreshedHistory
+
+                            );
+
+
+                            if (
+                                syncStatus
+                            ) {
+
+                                syncStatus.textContent =
+                                    "· live";
+
+                            }
+
+                        }
+
+                        else {
+
+                            content.className =
+                                "error";
+
+
+                            content.innerHTML = `
+
+                                <strong>
+                                    Could not load today's forecast.
+                                </strong>
+
+                                <br><br>
+
+                                Refresh failed.
+
+                                <br><br>
+
+                                <small>
+                                    ${
+                                        result.error
+                                        ||
+                                        "Please check your internet connection and try again."
+                                    }
+                                </small>
+
+                                <br><br>
+
+                                <button
+                                    id="errorRefreshButton"
+                                    class="refresh-btn"
+                                    type="button">
+
+                                    ↻ Refresh
+
+                                </button>
+
+                            `;
+
+
+                            attachErrorRefreshButton();
+
+                        }
+
+                    }
+
+                    catch (error) {
+
+                        console.error(
+
+                            "Refresh error:",
+
+                            error
+
+                        );
+
+
+                        content.className =
+                            "error";
+
+
+                        content.innerHTML = `
+
+                            <strong>
+                                Could not load today's forecast.
+                            </strong>
+
+                            <br><br>
+
+                            Refresh failed.
+
+                            <br><br>
+
+                            <small>
+                                ${error.message}
+                            </small>
+
+                            <br><br>
+
+                            <button
+                                id="errorRefreshButton"
+                                class="refresh-btn"
+                                type="button">
+
+                                ↻ Refresh
+
+                            </button>
+
+                        `;
+
+
+                        attachErrorRefreshButton();
+
+                    }
+
+                }
+
+            );
 
         }
 
@@ -2246,20 +2767,6 @@
 
                         </select>
 
-
-                        <!-- =================================================
-                             REFRESH BUTTON
-                        ================================================== -->
-
-                        <button
-                            id="refreshButton"
-                            class="refresh-btn"
-                            type="button">
-
-                            ↻ Refresh
-
-                        </button>
-
                     </div>
 
                 </div>
@@ -2521,138 +3028,6 @@
 
             }
 
-
-            /* =========================================================
-               REFRESH BUTTON EVENT
-            ========================================================== */
-
-            const refreshButton =
-                document.getElementById(
-                    "refreshButton"
-                );
-
-
-            if (
-                refreshButton
-            ) {
-
-                refreshButton.addEventListener(
-
-                    "click",
-
-                    async function () {
-
-                        refreshButton.disabled =
-                            true;
-
-
-                        refreshButton.textContent =
-                            "↻ Refreshing...";
-
-
-                        if (
-                            syncStatus
-                        ) {
-
-                            syncStatus.textContent =
-                                "· refreshing";
-
-                        }
-
-
-                        try {
-
-                            const result =
-                                await refreshPair(
-                                    currentPair
-                                );
-
-
-                            if (
-                                result.success
-                            ) {
-
-                                /*
-                                 * Reload the dashboard after
-                                 * successful refresh.
-                                 */
-
-                                await loadDashboard();
-
-                            }
-
-                            else {
-
-                                console.warn(
-
-                                    "Refresh failed:",
-
-                                    result.error
-
-                                );
-
-
-                                /*
-                                 * If refresh fails,
-                                 * load saved data if available.
-                                 */
-
-                                await loadDashboard();
-
-                            }
-
-                        }
-
-                        catch (error) {
-
-                            console.error(
-
-                                "Refresh button error:",
-
-                                error
-
-                            );
-
-
-                            await loadDashboard();
-
-                        }
-
-                        finally {
-
-                            /*
-                             * The button may have been
-                             * recreated by render(), so only
-                             * update it if it still exists.
-                             */
-
-                            const currentRefreshButton =
-                                document.getElementById(
-                                    "refreshButton"
-                                );
-
-
-                            if (
-                                currentRefreshButton
-                            ) {
-
-                                currentRefreshButton.disabled =
-                                    false;
-
-
-                                currentRefreshButton.textContent =
-                                    "↻ Refresh";
-
-                            }
-
-                        }
-
-                    }
-
-                );
-
-            }
-
         }
 
 
@@ -2711,8 +3086,6 @@
 
             }
 
-
-            /* Keep only valid closing-rate observations. */
 
             const cleanHistory =
                 history
