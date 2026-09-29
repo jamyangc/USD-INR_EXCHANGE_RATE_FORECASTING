@@ -105,14 +105,7 @@ PAIRS = {
         "wb_base": "USA",
         "wb_quote": "CAN"
     },
-    "EURUSD": {
-        "label": "EUR/USD",
-        "ticker": "EURUSD=X",
-        "base": "EUR",
-        "quote": "USD",
-        "wb_base": "EMU",
-        "wb_quote": "USA"
-    },
+    
     "GBPUSD": {
         "label": "GBP/USD",
         "ticker": "GBPUSD=X",

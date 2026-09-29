@@ -27,7 +27,9 @@
     ========================================================== -->
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<style>
+
+
+    <style>
 
         /* =========================================================
            VARIABLES
@@ -47,7 +49,9 @@
 
             --panel: #ffffff;
 
-            --shadow: 0 1px 2px rgba(26,35,50,0.04), 0 4px 14px rgba(26,35,50,0.05);
+            --shadow:
+                0 1px 2px rgba(26,35,50,0.04),
+                0 4px 14px rgba(26,35,50,0.05);
         }
 
 
@@ -136,6 +140,7 @@
             flex-wrap: wrap;
         }
 
+
         /* =========================================================
            PAIR SELECTOR
         ========================================================== */
@@ -188,12 +193,59 @@
             cursor: pointer;
         }
 
+
+        /* =========================================================
+           REFRESH BUTTON
+        ========================================================== */
+
+        .refresh-btn {
+            border: 1px solid var(--line);
+
+            background: var(--brass-soft);
+
+            color: var(--ink);
+
+            padding: 7px 12px;
+
+            border-radius: 5px;
+
+            font-family: 'Courier New', monospace;
+
+            font-size: 12px;
+
+            letter-spacing: 0.05em;
+
+            cursor: pointer;
+
+            transition: all 0.15s ease;
+        }
+
+        .refresh-btn:hover {
+            background: var(--ink);
+
+            border-color: var(--ink);
+
+            color: white;
+        }
+
+        .refresh-btn:active {
+            transform: scale(0.97);
+        }
+
+        .refresh-btn:disabled {
+            opacity: 0.6;
+
+            cursor: wait;
+        }
+
+
         h1 {
             font-size: 2.6rem;
 
             margin: 0 0 8px;
 
             font-weight: 600;
+
             line-height: 1.1;
         }
 
@@ -216,6 +268,7 @@
 
         main {
             max-width: 1100px;
+
             margin: 0 auto;
 
             padding: 32px 24px 80px;
@@ -309,14 +362,23 @@
 
         .benchmark-badge {
             display: inline-block;
+
             margin-left: 8px;
+
             padding: 3px 7px;
+
             border: 1px solid currentColor;
+
             border-radius: 999px;
+
             font-family: 'Courier New', monospace;
+
             font-size: 9px;
+
             letter-spacing: 0.08em;
+
             text-transform: uppercase;
+
             vertical-align: middle;
         }
 
@@ -328,18 +390,24 @@
             background: var(--panel);
 
             border: 1px solid var(--line);
+
             border-radius: 8px;
 
             padding: 22px 20px;
 
             box-shadow: var(--shadow);
 
-            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            transition:
+                transform 0.15s ease,
+                box-shadow 0.15s ease;
         }
 
         .panel:hover {
             transform: translateY(-2px);
-            box-shadow: 0 2px 4px rgba(26,35,50,0.06), 0 10px 22px rgba(26,35,50,0.08);
+
+            box-shadow:
+                0 2px 4px rgba(26,35,50,0.06),
+                0 10px 22px rgba(26,35,50,0.08);
         }
 
         .panel .label {
@@ -459,17 +527,25 @@
 
         .chart-container {
             position: relative;
+
             width: 100%;
+
             height: 360px;
+
             background: #ffffff;
+
             border: 1px solid var(--line);
+
             border-radius: 8px;
+
             box-shadow: var(--shadow);
+
             padding: 15px;
         }
 
         #fxChart {
             width: 100% !important;
+
             height: 100% !important;
         }
 
@@ -616,15 +692,21 @@
         id="tickerTape"
         class="ticker-tape">
 
-        <span>FX FORECAST DASHBOARD</span>
+        <span>
+            FX FORECAST DASHBOARD
+        </span>
 
-        <span>DAILY SELECTED MODEL + RANDOM WALK BENCHMARK</span>
+        <span>
+            DAILY SELECTED MODEL + RANDOM WALK BENCHMARK
+        </span>
 
         <span>
             ALL MODELS RUN IN THE BACKEND · ONLY THE SELECTED MODEL IS DISPLAYED
         </span>
 
-        <span>DAILY TRADING-DAY FORECAST</span>
+        <span>
+            DAILY TRADING-DAY FORECAST
+        </span>
 
     </div>
 
@@ -640,15 +722,17 @@
         </p>
 
         <h1>
-            <span id="headline">Where does the rate land tomorrow?</span>
+
+            <span id="headline">
+                Where does the rate land tomorrow?
+            </span>
+
             <span
                 id="sync-status"
                 class="sync-status">
             </span>
+
         </h1>
-
-
-
 
     </header>
 
@@ -689,8 +773,8 @@
            GLOBAL
         ========================================================== */
 
-        // Render backend used by the Android app and web dashboard.
-        const API_BASE = "https://usd-inr-exchange-rate-forecasting.onrender.com";
+        const API_BASE =
+            "https://usd-inr-exchange-rate-forecasting.onrender.com";
 
         let fxChart = null;
 
@@ -698,17 +782,22 @@
 
         let availablePairs = [];
 
+
         const content =
             document.getElementById("content");
+
 
         const syncStatus =
             document.getElementById("sync-status");
 
+
         const tickerTape =
             document.getElementById("tickerTape");
 
+
         const headline =
             document.getElementById("headline");
+
 
         /* =========================================================
            MODEL DEFINITIONS
@@ -769,11 +858,10 @@
 
         /* =========================================================
            CURRENCY SYMBOLS
-           Falls back to the currency code when no common
-           symbol exists.
         ========================================================== */
 
         const CURRENCY_SYMBOLS = {
+
             USD: "$",
             EUR: "€",
             GBP: "£",
@@ -783,28 +871,45 @@
             CAD: "CA$",
             AUD: "A$",
             NZD: "NZ$"
+
         };
+
 
         function symbolFor(ccy) {
 
-            return CURRENCY_SYMBOLS[ccy] || (ccy + " ");
+            return CURRENCY_SYMBOLS[ccy]
+                || (ccy + " ");
 
         }
 
-        function formatPrice(value, ccy, decimals) {
+
+        function formatPrice(
+            value,
+            ccy,
+            decimals
+        ) {
 
             return (
+
                 symbolFor(ccy)
-                + Number(value).toFixed(
-                    decimals === undefined ? 2 : decimals
+
+                +
+
+                Number(value).toFixed(
+
+                    decimals === undefined
+                        ? 2
+                        : decimals
+
                 )
+
             );
 
         }
 
 
         /* =========================================================
-           STORAGE KEYS (namespaced per pair)
+           STORAGE KEYS
         ========================================================== */
 
         function forecastStorageKey(pair) {
@@ -813,158 +918,242 @@
 
         }
 
+
         function historyStorageKey(pair) {
 
             return "fx_history_data_" + pair;
 
         }
 
-        /* =========================================================
-           STORAGE KEY for the pair list itself.
 
-           Saved so that if /api/pairs can't be reached (device is
-           offline), the dropdown can still be rebuilt from the
-           last known list instead of collapsing down to a single
-           hardcoded pair.
-        ========================================================== */
+        const PAIRS_LIST_STORAGE_KEY =
+            "fx_pairs_list";
 
-        const PAIRS_LIST_STORAGE_KEY = "fx_pairs_list";
 
         /* =========================================================
            DAILY MODEL SELECTION
-
-           All non-benchmark models are still calculated by the
-           backend. The dashboard displays only the model that was
-           closest to the actual end-of-day close for the previous
-           forecast day. Random Walk is always displayed separately
-           as the benchmark.
-
-           Example:
-           - Monday forecast for Tuesday is saved.
-           - Tuesday's actual close becomes available.
-           - The app compares Monday's six model forecasts with
-             Tuesday's actual close.
-           - The smallest absolute error becomes Tuesday's selected
-             model for the next dashboard forecast.
         ========================================================== */
 
         const FORECAST_MODEL_KEYS = [
+
             "ppp",
             "irp",
             "ridge",
             "decision_tree",
             "mlp"
+
         ];
 
+
         const MODEL_LABELS = {
+
             ppp: "PPP",
             irp: "IRP",
             ridge: "Ridge",
             decision_tree: "Decision Tree",
             mlp: "MLP"
+
         };
+
 
         function getModelLabel(modelKey) {
 
-            return MODEL_LABELS[modelKey] || modelKey;
+            return MODEL_LABELS[modelKey]
+                || modelKey;
 
         }
 
-        function findActualForForecastDate(history, forecastDate) {
 
-            if (!Array.isArray(history) || !forecastDate) {
+        function findActualForForecastDate(
+            history,
+            forecastDate
+        ) {
+
+            if (
+                !Array.isArray(history)
+                ||
+                !forecastDate
+            ) {
+
                 return null;
+
             }
 
-            const match = history.find(function (item) {
 
-                return String(item.date) === String(forecastDate);
+            const match =
+                history.find(
+                    function (item) {
 
-            });
+                        return String(item.date)
+                            ===
+                            String(forecastDate);
 
-            if (!match || !Number.isFinite(Number(match.price))) {
+                    }
+                );
+
+
+            if (
+                !match
+                ||
+                !Number.isFinite(
+                    Number(match.price)
+                )
+            ) {
+
                 return null;
+
             }
+
 
             return Number(match.price);
 
         }
 
-        function evaluatePreviousForecast(previousForecast, history) {
+
+        function evaluatePreviousForecast(
+            previousForecast,
+            history
+        ) {
 
             if (!previousForecast) {
+
                 return null;
+
             }
 
-            const forecastDate = previousForecast.forecast_date;
 
-            const actualClose = findActualForForecastDate(
-                history,
-                forecastDate
-            );
+            const forecastDate =
+                previousForecast.forecast_date;
 
-            if (actualClose === null) {
-                return null;
-            }
 
-            let bestKey = null;
-            let bestError = Infinity;
-
-            FORECAST_MODEL_KEYS.forEach(function (key) {
-
-                const prediction = Number(previousForecast[key]);
-
-                if (!Number.isFinite(prediction)) {
-                    return;
-                }
-
-                const error = Math.abs(
-                    prediction - actualClose
+            const actualClose =
+                findActualForForecastDate(
+                    history,
+                    forecastDate
                 );
 
-                if (error < bestError) {
 
-                    bestError = error;
-                    bestKey = key;
+            if (actualClose === null) {
 
-                }
-
-            });
-
-            if (!bestKey) {
                 return null;
+
             }
 
+
+            let bestKey = null;
+
+            let bestError = Infinity;
+
+
+            FORECAST_MODEL_KEYS.forEach(
+                function (key) {
+
+                    const prediction =
+                        Number(
+                            previousForecast[key]
+                        );
+
+
+                    if (
+                        !Number.isFinite(
+                            prediction
+                        )
+                    ) {
+
+                        return;
+
+                    }
+
+
+                    const error =
+                        Math.abs(
+                            prediction -
+                            actualClose
+                        );
+
+
+                    if (
+                        error <
+                        bestError
+                    ) {
+
+                        bestError = error;
+
+                        bestKey = key;
+
+                    }
+
+                }
+            );
+
+
+            if (!bestKey) {
+
+                return null;
+
+            }
+
+
             return {
+
                 key: bestKey,
-                label: getModelLabel(bestKey),
+
+                label:
+                    getModelLabel(
+                        bestKey
+                    ),
+
                 error: bestError,
-                actualClose: actualClose,
-                evaluatedDate: forecastDate
+
+                actualClose:
+                    actualClose,
+
+                evaluatedDate:
+                    forecastDate
+
             };
 
         }
 
+
         function getSelectedModel(data) {
 
             const key =
-                data && data.selected_model_key;
+                data &&
+                data.selected_model_key;
+
 
             if (
-                key &&
-                FORECAST_MODEL_KEYS.includes(key) &&
-                Number.isFinite(Number(data[key]))
+
+                key
+                &&
+                FORECAST_MODEL_KEYS.includes(
+                    key
+                )
+                &&
+                Number.isFinite(
+                    Number(data[key])
+                )
+
             ) {
+
                 return {
+
                     key: key,
-                    label: getModelLabel(key)
+
+                    label:
+                        getModelLabel(
+                            key
+                        )
+
                 };
+
             }
+
 
             return null;
 
         }
-
 
 
         /* =========================================================
@@ -977,7 +1166,10 @@
 
             let arrow = "►";
 
-            if (direction === "UP") {
+
+            if (
+                direction === "UP"
+            ) {
 
                 cls = "up";
 
@@ -985,7 +1177,9 @@
 
             }
 
-            else if (direction === "DOWN") {
+            else if (
+                direction === "DOWN"
+            ) {
 
                 cls = "down";
 
@@ -993,9 +1187,11 @@
 
             }
 
+
             return `
 
-                <span class="direction-pill ${cls}">
+                <span
+                    class="direction-pill ${cls}">
 
                     ${arrow} ${direction}
 
@@ -1007,65 +1203,221 @@
 
 
         /* =========================================================
-           LOAD PAIR LIST, THEN DASHBOARD
+           REFRESH CURRENT PAIR
+        ========================================================== */
 
-           If the online fetch for the pair list fails, this now
-           falls back to whatever pair list was saved during the
-           last successful visit, rather than dropping straight to
-           a single hardcoded pair. That way, the dropdown still
-           lists every pair the user has previously seen even when
-           there is no network at all.
+        async function refreshPair(pair) {
+
+            /*
+             * EMU is not supported because its World Bank
+             * CPI data is not usable.
+             */
+
+            if (pair === "EMU") {
+
+                return {
+
+                    pair: pair,
+
+                    success: false,
+
+                    error:
+                        "EMU is not supported."
+
+                };
+
+            }
+
+
+            try {
+
+                const response =
+                    await fetch(
+
+                        `${API_BASE}/api/refresh?pair=${encodeURIComponent(pair)}&_t=${Date.now()}`,
+
+                        {
+                            method: "GET",
+
+                            cache: "no-store"
+
+                        }
+
+                    );
+
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        `HTTP ${response.status}`
+                    );
+
+                }
+
+
+                const data =
+                    await response.json();
+
+
+                localStorage.setItem(
+
+                    forecastStorageKey(pair),
+
+                    JSON.stringify(data)
+
+                );
+
+
+                return {
+
+                    pair: pair,
+
+                    success: true,
+
+                    data: data
+
+                };
+
+            }
+
+
+            catch (error) {
+
+                console.error(
+
+                    `Refresh failed for ${pair}:`,
+
+                    error
+
+                );
+
+
+                return {
+
+                    pair: pair,
+
+                    success: false,
+
+                    error: error.message
+
+                };
+
+            }
+
+        }
+
+
+        /* =========================================================
+           LOAD PAIR LIST
+           
+           EMU IS REMOVED HERE.
         ========================================================== */
 
         async function loadPairs() {
 
             let fetchedOnline = false;
 
+
             try {
 
-                const res = await fetch(
-                    `${API_BASE}/api/pairs`,
-                    { cache: "no-store" }
-                );
+                const res =
+                    await fetch(
+
+                        `${API_BASE}/api/pairs`,
+
+                        {
+                            cache: "no-store"
+                        }
+
+                    );
+
 
                 if (!res.ok) {
-                    throw new Error("Could not load pair list");
+
+                    throw new Error(
+                        "Could not load pair list"
+                    );
+
                 }
 
-                availablePairs = await res.json();
+
+                availablePairs =
+                    await res.json();
+
+
+                /* =================================================
+                   REMOVE EMU FROM ONLINE LIST
+                ================================================= */
+
+                availablePairs =
+                    availablePairs.filter(
+                        function (p) {
+
+                            return p.key !== "EMU";
+
+                        }
+                    );
+
 
                 fetchedOnline = true;
 
+
+                /*
+                 * Save the cleaned list so EMU is not stored
+                 * in the browser's offline pair list.
+                 */
+
                 localStorage.setItem(
+
                     PAIRS_LIST_STORAGE_KEY,
-                    JSON.stringify(availablePairs)
+
+                    JSON.stringify(
+                        availablePairs
+                    )
+
                 );
 
             }
 
+
             catch (error) {
 
                 console.warn(
+
                     "Pair list fetch failed, trying saved list.",
+
                     error
+
                 );
 
+
                 const savedPairs =
-                    localStorage.getItem(PAIRS_LIST_STORAGE_KEY);
+                    localStorage.getItem(
+
+                        PAIRS_LIST_STORAGE_KEY
+
+                    );
+
 
                 if (savedPairs) {
 
                     try {
 
-                        availablePairs = JSON.parse(savedPairs);
+                        availablePairs =
+                            JSON.parse(
+                                savedPairs
+                            );
 
                     }
 
                     catch (parseError) {
 
                         console.error(
+
                             "Saved pair list is corrupted:",
+
                             parseError
+
                         );
 
                         availablePairs = [];
@@ -1074,33 +1426,106 @@
 
                 }
 
-                if (!availablePairs || availablePairs.length === 0) {
+
+                /*
+                 * Remove EMU from the saved list too.
+                 */
+
+                if (
+                    Array.isArray(
+                        availablePairs
+                    )
+                ) {
+
+                    availablePairs =
+                        availablePairs.filter(
+                            function (p) {
+
+                                return p.key !== "EMU";
+
+                            }
+                        );
+
+                }
+
+
+                if (
+                    !availablePairs
+                    ||
+                    availablePairs.length === 0
+                ) {
 
                     availablePairs = [
-                        { key: "USDINR", label: "USD/INR", base: "USD", quote: "INR" }
+
+                        {
+                            key: "USDINR",
+
+                            label: "USD/INR",
+
+                            base: "USD",
+
+                            quote: "INR"
+
+                        }
+
                     ];
 
                 }
 
             }
 
+
+            /*
+             * Final protection against EMU.
+             */
+
+            availablePairs =
+                availablePairs.filter(
+                    function (p) {
+
+                        return p.key !== "EMU";
+
+                    }
+                );
+
+
             const savedPair =
-                localStorage.getItem("fx_selected_pair");
+                localStorage.getItem(
+                    "fx_selected_pair"
+                );
+
 
             if (
-                savedPair &&
-                availablePairs.some(function (p) { return p.key === savedPair; })
+
+                savedPair
+                &&
+                savedPair !== "EMU"
+                &&
+                availablePairs.some(
+                    function (p) {
+
+                        return p.key ===
+                            savedPair;
+
+                    }
+                )
+
             ) {
 
-                currentPair = savedPair;
+                currentPair =
+                    savedPair;
 
             }
 
-            else if (availablePairs.length > 0) {
+            else if (
+                availablePairs.length > 0
+            ) {
 
-                currentPair = availablePairs[0].key;
+                currentPair =
+                    availablePairs[0].key;
 
             }
+
 
             loadDashboard();
 
@@ -1109,37 +1534,72 @@
 
         /* =========================================================
            PREFETCH ALL PAIRS DISABLED
-
-           Forecasts are intentionally fetched only for the pair the
-           user is viewing. This reduces Render/Yahoo load and avoids
-           unnecessary API failures when the dashboard starts.
         ========================================================== */
 
         async function prefetchAllPairs() {
+
             return;
+
         }
 
 
         /* =========================================================
            SWITCH PAIR
-           Called when the user taps a suggestion chip.
         ========================================================== */
 
         function switchPair(pairKey) {
 
-            if (pairKey === currentPair) {
+            if (
+                pairKey === currentPair
+            ) {
+
                 return;
+
             }
 
-            currentPair = pairKey;
 
-            localStorage.setItem("fx_selected_pair", currentPair);
+            /*
+             * Never allow EMU to be selected.
+             */
 
-            content.className = "loading";
+            if (
+                pairKey === "EMU"
+            ) {
 
-            content.innerHTML = "Fetching today's numbers…";
+                return;
 
-            window.scrollTo({ top: 0, behavior: "smooth" });
+            }
+
+
+            currentPair =
+                pairKey;
+
+
+            localStorage.setItem(
+
+                "fx_selected_pair",
+
+                currentPair
+
+            );
+
+
+            content.className =
+                "loading";
+
+
+            content.innerHTML =
+                "Fetching today's numbers…";
+
+
+            window.scrollTo({
+
+                top: 0,
+
+                behavior: "smooth"
+
+            });
+
 
             loadDashboard();
 
@@ -1152,222 +1612,368 @@
 
         async function loadDashboard() {
 
-    const pair = currentPair;
+            const pair =
+                currentPair;
 
-    try {
 
-        // Request prediction first. It may train models and refresh the cache.
-        // History is requested only after prediction has finished.
-        const predictRes = await fetch(
-            `${API_BASE}/api/predict?pair=${pair}&_t=${Date.now()}`,
-            { cache: "no-store" }
-        );
-
-        if (!predictRes.ok) {
-            let message = "Forecast API failed";
             try {
-                const errorData = await predictRes.json();
-                if (errorData && errorData.error) {
-                    message = errorData.error;
+
+                /*
+                 * Request prediction first.
+                 */
+
+                const predictRes =
+                    await fetch(
+
+                        `${API_BASE}/api/predict?pair=${encodeURIComponent(pair)}&_t=${Date.now()}`,
+
+                        {
+                            cache: "no-store"
+                        }
+
+                    );
+
+
+                if (!predictRes.ok) {
+
+                    let message =
+                        "Forecast API failed";
+
+
+                    try {
+
+                        const errorData =
+                            await predictRes.json();
+
+
+                        if (
+                            errorData
+                            &&
+                            errorData.error
+                        ) {
+
+                            message =
+                                errorData.error;
+
+                        }
+
+                    }
+
+                    catch (_) {}
+
+
+                    throw new Error(
+                        message
+                    );
+
                 }
-            } catch (_) {}
-            throw new Error(message);
-        }
 
-        const data = await predictRes.json();
-
-        // The prediction request has already refreshed the history file.
-        const historyRes = await fetch(
-            `${API_BASE}/api/history?pair=${pair}&_t=${Date.now()}`,
-            { cache: "no-store" }
-        );
-
-        let history = [];
-
-        if (historyRes.ok) {
-            history = await historyRes.json();
-        }
-
-        /*
-         * Evaluate the forecast that was saved on the previous
-         * successful visit. Its forecast date should now have an
-         * actual closing price in history.
-         */
-        const previousSavedRaw =
-            localStorage.getItem(
-                forecastStorageKey(pair)
-            );
-
-        let previousSavedData = null;
-
-        if (previousSavedRaw) {
-
-            try {
-                previousSavedData = JSON.parse(previousSavedRaw);
-            }
-            catch (parseError) {
-                console.warn(
-                    "Previous forecast could not be parsed:",
-                    parseError
-                );
-            }
-
-        }
-
-        const evaluatedPrevious =
-            evaluatePreviousForecast(
-                previousSavedData,
-                history
-            );
-
-        /*
-         * The backend can optionally provide selected_model_key.
-         * When it does not, the app uses the previous forecast
-         * evaluation above. This keeps the backend models unchanged
-         * while making the display decision dynamically.
-         */
-        if (evaluatedPrevious) {
-
-            data.selected_model_key =
-                evaluatedPrevious.key;
-
-            data.selected_model_label =
-                evaluatedPrevious.label;
-
-            data.selected_model_error =
-                evaluatedPrevious.error;
-
-            data.selected_model_actual_close =
-                evaluatedPrevious.actualClose;
-
-            data.selected_model_evaluated_date =
-                evaluatedPrevious.evaluatedDate;
-
-        }
-
-        /*
-         * If the backend already supplies a valid selected model,
-         * keep it. Otherwise the value remains absent until a
-         * completed forecast cycle can be evaluated.
-         */
-
-        // Save successful forecast data in the browser,
-        // namespaced per pair. This becomes our offline backup.
-        localStorage.setItem(
-            forecastStorageKey(pair),
-            JSON.stringify(data)
-        );
-
-        localStorage.setItem(
-            historyStorageKey(pair),
-            JSON.stringify(history)
-        );
-
-        // Display fresh data
-        render(data, history);
-
-        if (syncStatus) {
-            syncStatus.textContent =
-                navigator.onLine
-                    ? "· live"
-                    : "· offline (saved data)";
-        }
-
-    }
-
-    catch (error) {
-
-        console.warn(
-            "Online forecast unavailable. Trying saved browser data.",
-            error
-        );
-
-        // =====================================================
-        // USE SAVED BROWSER DATA
-        // =====================================================
-
-        const savedData =
-            localStorage.getItem(
-                forecastStorageKey(pair)
-            );
-
-        const savedHistory =
-            localStorage.getItem(
-                historyStorageKey(pair)
-            );
-
-        if (savedData) {
-
-            try {
 
                 const data =
-                    JSON.parse(savedData);
+                    await predictRes.json();
 
-                const history =
-                    savedHistory
-                        ? JSON.parse(savedHistory)
-                        : [];
 
-                render(data, history);
+                /*
+                 * Get historical data.
+                 */
 
-                if (syncStatus) {
-                    syncStatus.textContent =
-                        "· offline (last saved data)";
+                const historyRes =
+                    await fetch(
+
+                        `${API_BASE}/api/history?pair=${encodeURIComponent(pair)}&_t=${Date.now()}`,
+
+                        {
+                            cache: "no-store"
+                        }
+
+                    );
+
+
+                let history = [];
+
+
+                if (
+                    historyRes.ok
+                ) {
+
+                    history =
+                        await historyRes.json();
+
                 }
 
-                return;
 
-            }
+                /*
+                 * Evaluate previous saved forecast.
+                 */
 
-            catch (storageError) {
+                const previousSavedRaw =
+                    localStorage.getItem(
 
-                console.error(
-                    "Saved browser data is corrupted:",
-                    storageError
+                        forecastStorageKey(pair)
+
+                    );
+
+
+                let previousSavedData =
+                    null;
+
+
+                if (
+                    previousSavedRaw
+                ) {
+
+                    try {
+
+                        previousSavedData =
+                            JSON.parse(
+                                previousSavedRaw
+                            );
+
+                    }
+
+                    catch (parseError) {
+
+                        console.warn(
+
+                            "Previous forecast could not be parsed:",
+
+                            parseError
+
+                        );
+
+                    }
+
+                }
+
+
+                const evaluatedPrevious =
+                    evaluatePreviousForecast(
+
+                        previousSavedData,
+
+                        history
+
+                    );
+
+
+                /*
+                 * Select the model with the smallest
+                 * previous absolute error.
+                 */
+
+                if (
+                    evaluatedPrevious
+                ) {
+
+                    data.selected_model_key =
+                        evaluatedPrevious.key;
+
+
+                    data.selected_model_label =
+                        evaluatedPrevious.label;
+
+
+                    data.selected_model_error =
+                        evaluatedPrevious.error;
+
+
+                    data.selected_model_actual_close =
+                        evaluatedPrevious.actualClose;
+
+
+                    data.selected_model_evaluated_date =
+                        evaluatedPrevious.evaluatedDate;
+
+                }
+
+
+                /*
+                 * Save successful forecast data.
+                 */
+
+                localStorage.setItem(
+
+                    forecastStorageKey(pair),
+
+                    JSON.stringify(data)
+
                 );
 
+
+                localStorage.setItem(
+
+                    historyStorageKey(pair),
+
+                    JSON.stringify(history)
+
+                );
+
+
+                /*
+                 * Display fresh data.
+                 */
+
+                render(
+                    data,
+                    history
+                );
+
+
+                if (
+                    syncStatus
+                ) {
+
+                    syncStatus.textContent =
+                        navigator.onLine
+
+                            ? "· live"
+
+                            : "· offline (saved data)";
+
+                }
+
+            }
+
+
+            catch (error) {
+
+                console.warn(
+
+                    "Online forecast unavailable. Trying saved browser data.",
+
+                    error
+
+                );
+
+
+                /* =================================================
+                   SAVED DATA FALLBACK
+                ================================================== */
+
+                const savedData =
+                    localStorage.getItem(
+
+                        forecastStorageKey(pair)
+
+                    );
+
+
+                const savedHistory =
+                    localStorage.getItem(
+
+                        historyStorageKey(pair)
+
+                    );
+
+
+                if (
+                    savedData
+                ) {
+
+                    try {
+
+                        const data =
+                            JSON.parse(
+                                savedData
+                            );
+
+
+                        const history =
+                            savedHistory
+
+                                ? JSON.parse(
+                                    savedHistory
+                                )
+
+                                : [];
+
+
+                        render(
+                            data,
+                            history
+                        );
+
+
+                        if (
+                            syncStatus
+                        ) {
+
+                            syncStatus.textContent =
+                                "· offline (last saved data)";
+
+                        }
+
+
+                        return;
+
+                    }
+
+                    catch (
+                        storageError
+                    ) {
+
+                        console.error(
+
+                            "Saved browser data is corrupted:",
+
+                            storageError
+
+                        );
+
+                    }
+
+                }
+
+
+                /* =================================================
+                   NO INTERNET + NO SAVED DATA
+                ================================================== */
+
+                console.error(
+
+                    "Dashboard error:",
+
+                    error
+
+                );
+
+
+                content.className =
+                    "error";
+
+
+                content.innerHTML = `
+
+                    <strong>
+                        Could not load today's forecast.
+                    </strong>
+
+                    <br><br>
+
+                    Please connect to the internet once
+                    so the latest forecast can be saved.
+
+                    <br><br>
+
+                    <small>
+                        ${error.message}
+                    </small>
+
+                `;
+
+
+                if (
+                    syncStatus
+                ) {
+
+                    syncStatus.textContent =
+                        "· offline (no saved data yet)";
+
+                }
+
             }
 
         }
-
-        // =====================================================
-        // NO INTERNET + NO SAVED DATA
-        // =====================================================
-
-        console.error(
-            "Dashboard error:",
-            error
-        );
-
-        content.className = "error";
-
-        content.innerHTML = `
-
-            <strong>
-                Could not load today's forecast.
-            </strong>
-
-            <br><br>
-
-            Please connect to the internet once
-            so the latest forecast can be saved.
-
-            <br><br>
-
-            <small>
-                ${error.message}
-            </small>
-
-        `;
-
-        if (syncStatus) {
-            syncStatus.textContent =
-                "· offline (no saved data yet)";
-        }
-
-    }
-
-}
 
 
         /* =========================================================
@@ -1379,46 +1985,94 @@
             history
         ) {
 
-            content.className = "";
+            content.className =
+                "";
 
-            const pairLabel = data.pair_label || currentPair;
-            const baseCcy = data.base_ccy || "";
-            const quoteCcy = data.quote_ccy || "";
+
+            const pairLabel =
+                data.pair_label ||
+                currentPair;
+
+
+            const baseCcy =
+                data.base_ccy ||
+                "";
+
+
+            const quoteCcy =
+                data.quote_ccy ||
+                "";
+
 
             const selectedModel =
-                getSelectedModel(data);
+                getSelectedModel(
+                    data
+                );
+
 
             const selectedModelKey =
                 selectedModel
+
                     ? selectedModel.key
+
                     : null;
+
 
             const selectedModelLabel =
                 selectedModel
+
                     ? selectedModel.label
+
                     : "Selected model pending";
+
 
             const selectedForecastValue =
                 selectedModel
-                    ? Number(data[selectedModelKey])
-                    : Number(data.random_walk);
+
+                    ? Number(
+                        data[
+                            selectedModelKey
+                        ]
+                    )
+
+                    : Number(
+                        data.random_walk
+                    );
+
 
             const selectedDirection =
                 selectedModel
+
                     ? (
-                        data[selectedModelKey + "_direction"]
-                        || "FLAT"
+                        data[
+                            selectedModelKey +
+                            "_direction"
+                        ]
+
+                        ||
+
+                        "FLAT"
                     )
+
                     : "FLAT";
 
-            // Update chrome that depends on the selected pair
-            document.title = pairLabel + " Tomorrow";
+
+            document.title =
+                pairLabel +
+                " Tomorrow";
+
 
             headline.textContent =
-                "Where does " + pairLabel + " land tomorrow?";
+                "Where does " +
+                pairLabel +
+                " land tomorrow?";
 
-            tickerTape.querySelector("span").textContent =
-                pairLabel + " FORECAST DASHBOARD";
+
+            tickerTape
+                .querySelector("span")
+                .textContent =
+                    pairLabel +
+                    " FORECAST DASHBOARD";
 
 
             content.innerHTML = `
@@ -1433,7 +2087,15 @@
 
                         <div class="rate-figure">
 
-                            ${formatPrice(selectedForecastValue, quoteCcy, 2)}
+                            ${formatPrice(
+
+                                selectedForecastValue,
+
+                                quoteCcy,
+
+                                2
+
+                            )}
 
                         </div>
 
@@ -1443,7 +2105,9 @@
                     <span class="rate-unit">
 
                         per 1 ${baseCcy},
+
                         forecast for
+
                         ${data.forecast_date}
 
                     </span>
@@ -1457,29 +2121,90 @@
                     <div class="as-of">
 
                         Based on latest close
-                        ${formatPrice(data.latest_price, quoteCcy, 4)}
+
+                        ${formatPrice(
+
+                            data.latest_price,
+
+                            quoteCcy,
+
+                            4
+
+                        )}
 
                         on
+
                         ${data.latest_available_date}
 
                         · expected move
 
                         ${
-                            Number.isFinite(Number(selectedForecastValue)) &&
-                            Number.isFinite(Number(data.latest_price)) &&
-                            Number(data.latest_price) !== 0
-                                ? (
-                                    ((Number(selectedForecastValue) - Number(data.latest_price))
-                                        / Number(data.latest_price)) * 100
-                                  ).toFixed(2)
-                                : "n/a"
+                            Number.isFinite(
+                                Number(
+                                    selectedForecastValue
+                                )
+                            )
+                            &&
+                            Number.isFinite(
+                                Number(
+                                    data.latest_price
+                                )
+                            )
+                            &&
+                            Number(
+                                data.latest_price
+                            ) !== 0
+
+                            ?
+
+                            (
+
+                                (
+
+                                    (
+                                        Number(
+                                            selectedForecastValue
+                                        )
+
+                                        -
+
+                                        Number(
+                                            data.latest_price
+                                        )
+
+                                    )
+
+                                    /
+
+                                    Number(
+                                        data.latest_price
+                                    )
+
+                                )
+
+                                *
+
+                                100
+
+                            ).toFixed(2)
+
+                            :
+
+                            "n/a"
+
                         }%
 
                     </div>
 
+
                     <div class="pair-switcher">
 
-                        <span class="hint">Other exchange rates:</span>
+                        <span class="hint">
+
+                            Other exchange rates:
+
+                        </span>
+
 
                         <select
                             id="pairSelect"
@@ -1487,20 +2212,53 @@
 
                             ${
                                 availablePairs
-                                    .map(function (p) {
 
-                                        const selected =
-                                            p.key === currentPair
-                                                ? " selected"
-                                                : "";
+                                    .map(
+                                        function (p) {
 
-                                        return `<option value="${p.key}"${selected}>${p.label}</option>`;
+                                            const selected =
+                                                p.key ===
+                                                currentPair
 
-                                    })
+                                                    ? " selected"
+
+                                                    : "";
+
+
+                                            return `
+
+                                                <option
+                                                    value="${p.key}"
+                                                    ${selected}>
+
+                                                    ${p.label}
+
+                                                </option>
+
+                                            `;
+
+                                        }
+                                    )
+
                                     .join("")
+
                             }
 
                         </select>
+
+
+                        <!-- =================================================
+                             REFRESH BUTTON
+                        ================================================== -->
+
+                        <button
+                            id="refreshButton"
+                            class="refresh-btn"
+                            type="button">
+
+                            ↻ Refresh
+
+                        </button>
 
                     </div>
 
@@ -1515,87 +2273,163 @@
 
                     ${
                         selectedModel
-                            ? `
-                                <div class="panel hero-model">
 
-                                    <p class="label">
-                                        ${selectedModelLabel}
-                                        <span class="benchmark-badge">Selected</span>
-                                    </p>
+                        ?
 
-                                    <p class="value">
-                                        ${formatPrice(
-                                            selectedForecastValue,
-                                            quoteCcy,
-                                            4
-                                        )}
-                                    </p>
+                        `
 
-                                    <p class="note">
-                                        Closest model to the most recent
-                                        available end-of-day close
-                                    </p>
+                            <div class="panel hero-model">
 
-                                    ${
-                                        Number.isFinite(
-                                            Number(data.selected_model_error)
+                                <p class="label">
+
+                                    ${selectedModelLabel}
+
+                                    <span
+                                        class="benchmark-badge">
+
+                                        Selected
+
+                                    </span>
+
+                                </p>
+
+
+                                <p class="value">
+
+                                    ${formatPrice(
+
+                                        selectedForecastValue,
+
+                                        quoteCcy,
+
+                                        4
+
+                                    )}
+
+                                </p>
+
+
+                                <p class="note">
+
+                                    Closest model to the most recent
+                                    available end-of-day close
+
+                                </p>
+
+
+                                ${
+                                    Number.isFinite(
+
+                                        Number(
+                                            data.selected_model_error
                                         )
-                                            ? `
-                                                <p class="note">
-                                                    Previous absolute error:
-                                                    ${Number(
-                                                        data.selected_model_error
-                                                    ).toFixed(4)}
-                                                </p>
-                                            `
-                                            : ""
-                                    }
 
-                                </div>
-                            `
-                            : `
-                                <div class="panel hero-model">
+                                    )
 
-                                    <p class="label">
-                                        Selected model
-                                    </p>
+                                    ?
 
-                                    <p class="value">
-                                        Pending
-                                    </p>
+                                    `
 
-                                    <p class="note">
-                                        The first model winner will appear
-                                        after an actual closing rate is
-                                        available for a completed forecast.
-                                    </p>
+                                        <p class="note">
 
-                                </div>
-                            `
+                                            Previous absolute error:
+
+                                            ${Number(
+
+                                                data.selected_model_error
+
+                                            ).toFixed(4)}
+
+                                        </p>
+
+                                    `
+
+                                    :
+
+                                    ""
+
+                                }
+
+                            </div>
+
+                        `
+
+                        :
+
+                        `
+
+                            <div class="panel hero-model">
+
+                                <p class="label">
+
+                                    Selected model
+
+                                </p>
+
+
+                                <p class="value">
+
+                                    Pending
+
+                                </p>
+
+
+                                <p class="note">
+
+                                    The first model winner will appear
+                                    after an actual closing rate is
+                                    available for a completed forecast.
+
+                                </p>
+
+                            </div>
+
+                        `
                     }
 
-                    <div class="panel benchmark-panel">
+
+                    <div
+                        class="panel benchmark-panel">
 
                         <p class="label">
+
                             Random Walk
-                            <span class="benchmark-badge">Benchmark</span>
+
+                            <span
+                                class="benchmark-badge">
+
+                                Benchmark
+
+                            </span>
+
                         </p>
+
 
                         <p class="value">
+
                             ${formatPrice(
+
                                 data.random_walk,
+
                                 quoteCcy,
+
                                 4
+
                             )}
+
                         </p>
 
+
                         <p class="note">
+
                             Benchmark · tomorrow = latest price
+
                         </p>
 
                     </div>
 
                 </div>
+
 
                 <!-- =================================================
                      HISTORICAL FX CHART
@@ -1606,16 +2440,23 @@
                     <div class="chart-header">
 
                         <h2>
-                            ${pairLabel} — Historical FX Rate
+
+                            ${pairLabel}
+                            — Historical FX Rate
+
                         </h2>
 
                     </div>
 
+
                     <div class="chart-container">
 
-                        <canvas id="fxChart"></canvas>
+                        <canvas
+                            id="fxChart">
+                        </canvas>
 
                     </div>
+
 
                     <div class="chart-help">
 
@@ -1624,6 +2465,7 @@
                         New data extends the line automatically
 
                     </div>
+
 
                     <div
                         id="chartStatus"
@@ -1639,21 +2481,175 @@
 
 
             createInteractiveChart(
+
                 history,
+
                 data,
+
                 quoteCcy
+
             );
 
+
+            /* =========================================================
+               PAIR SELECTOR EVENT
+            ========================================================== */
+
             const pairSelect =
-                document.getElementById("pairSelect");
+                document.getElementById(
+                    "pairSelect"
+                );
 
-            if (pairSelect) {
 
-                pairSelect.addEventListener("change", function () {
+            if (
+                pairSelect
+            ) {
 
-                    switchPair(pairSelect.value);
+                pairSelect.addEventListener(
 
-                });
+                    "change",
+
+                    function () {
+
+                        switchPair(
+                            pairSelect.value
+                        );
+
+                    }
+
+                );
+
+            }
+
+
+            /* =========================================================
+               REFRESH BUTTON EVENT
+            ========================================================== */
+
+            const refreshButton =
+                document.getElementById(
+                    "refreshButton"
+                );
+
+
+            if (
+                refreshButton
+            ) {
+
+                refreshButton.addEventListener(
+
+                    "click",
+
+                    async function () {
+
+                        refreshButton.disabled =
+                            true;
+
+
+                        refreshButton.textContent =
+                            "↻ Refreshing...";
+
+
+                        if (
+                            syncStatus
+                        ) {
+
+                            syncStatus.textContent =
+                                "· refreshing";
+
+                        }
+
+
+                        try {
+
+                            const result =
+                                await refreshPair(
+                                    currentPair
+                                );
+
+
+                            if (
+                                result.success
+                            ) {
+
+                                /*
+                                 * Reload the dashboard after
+                                 * successful refresh.
+                                 */
+
+                                await loadDashboard();
+
+                            }
+
+                            else {
+
+                                console.warn(
+
+                                    "Refresh failed:",
+
+                                    result.error
+
+                                );
+
+
+                                /*
+                                 * If refresh fails,
+                                 * load saved data if available.
+                                 */
+
+                                await loadDashboard();
+
+                            }
+
+                        }
+
+                        catch (error) {
+
+                            console.error(
+
+                                "Refresh button error:",
+
+                                error
+
+                            );
+
+
+                            await loadDashboard();
+
+                        }
+
+                        finally {
+
+                            /*
+                             * The button may have been
+                             * recreated by render(), so only
+                             * update it if it still exists.
+                             */
+
+                            const currentRefreshButton =
+                                document.getElementById(
+                                    "refreshButton"
+                                );
+
+
+                            if (
+                                currentRefreshButton
+                            ) {
+
+                                currentRefreshButton.disabled =
+                                    false;
+
+
+                                currentRefreshButton.textContent =
+                                    "↻ Refresh";
+
+                            }
+
+                        }
+
+                    }
+
+                );
 
             }
 
@@ -1671,271 +2667,543 @@
         ) {
 
             const canvas =
-                document.getElementById("fxChart");
+                document.getElementById(
+                    "fxChart"
+                );
+
 
             const status =
-                document.getElementById("chartStatus");
+                document.getElementById(
+                    "chartStatus"
+                );
 
-            if (!canvas || typeof Chart === "undefined") {
 
-                if (status) {
+            if (
+                !canvas
+                ||
+                typeof Chart === "undefined"
+            ) {
+
+                if (
+                    status
+                ) {
+
                     status.textContent =
                         "Historical chart is unavailable.";
+
                 }
 
                 return;
+
             }
 
-            if (!Array.isArray(history) || history.length === 0) {
+
+            if (
+                !Array.isArray(history)
+                ||
+                history.length === 0
+            ) {
 
                 status.textContent =
                     "No historical FX data available.";
 
                 return;
+
             }
 
-            /* Keep only valid actual closing-rate observations. */
-            const cleanHistory = history
-                .filter(function (item) {
-                    return item &&
-                        item.date &&
-                        Number.isFinite(Number(item.price));
-                })
-                .sort(function (a, b) {
-                    return new Date(a.date) - new Date(b.date);
-                });
 
-            if (cleanHistory.length === 0) {
+            /* Keep only valid closing-rate observations. */
+
+            const cleanHistory =
+                history
+
+                    .filter(
+                        function (item) {
+
+                            return (
+
+                                item
+
+                                &&
+
+                                item.date
+
+                                &&
+
+                                Number.isFinite(
+                                    Number(
+                                        item.price
+                                    )
+                                )
+
+                            );
+
+                        }
+                    )
+
+                    .sort(
+                        function (a, b) {
+
+                            return (
+
+                                new Date(
+                                    a.date
+                                )
+
+                                -
+
+                                new Date(
+                                    b.date
+                                )
+
+                            );
+
+                        }
+                    );
+
+
+            if (
+                cleanHistory.length === 0
+            ) {
 
                 status.textContent =
                     "No valid historical FX data available.";
 
                 return;
+
             }
 
-            const labels = cleanHistory.map(function (item) {
-                return item.date;
-            });
 
-            const values = cleanHistory.map(function (item) {
-                return Number(item.price);
-            });
+            const labels =
+                cleanHistory.map(
+                    function (item) {
 
-            if (fxChart) {
-                fxChart.destroy();
-                fxChart = null;
-            }
+                        return item.date;
 
-            try {
-
-                fxChart = new Chart(
-                    canvas.getContext("2d"),
-                    {
-                        type: "line",
-
-                        data: {
-
-                            labels: labels,
-
-                            datasets: [
-                                {
-                                    label:
-                                        "Actual " +
-                                        (data.pair_label || currentPair),
-
-                                    data: values,
-
-                                    borderColor: "#1a2332",
-
-                                    backgroundColor:
-                                        "rgba(26,35,50,0.08)",
-
-                                    borderWidth: 2,
-
-                                    pointRadius:
-                                        cleanHistory.length > 60
-                                            ? 0
-                                            : 2,
-
-                                    pointHoverRadius: 5,
-
-                                    pointHitRadius: 12,
-
-                                    tension: 0.15,
-
-                                    fill: true
-                                }
-                            ]
-                        },
-
-                        options: {
-
-                            responsive: true,
-
-                            maintainAspectRatio: false,
-
-                            interaction: {
-                                mode: "index",
-                                intersect: false
-                            },
-
-                            plugins: {
-
-                                legend: {
-                                    display: true,
-                                    position: "bottom"
-                                },
-
-                                tooltip: {
-
-                                    enabled: true,
-
-                                    callbacks: {
-
-                                        title: function (items) {
-
-                                            if (!items.length) {
-                                                return "";
-                                            }
-
-                                            const date =
-                                                labels[items[0].dataIndex];
-
-                                            const parsed =
-                                                new Date(date);
-
-                                            if (
-                                                isNaN(
-                                                    parsed.getTime()
-                                                )
-                                            ) {
-                                                return date;
-                                            }
-
-                                            return parsed.toLocaleDateString(
-                                                "en-GB",
-                                                {
-                                                    day: "2-digit",
-                                                    month: "short",
-                                                    year: "numeric"
-                                                }
-                                            );
-                                        },
-
-                                        label: function (context) {
-
-                                            return (
-                                                " Actual close: " +
-                                                formatPrice(
-                                                    context.parsed.y,
-                                                    quoteCcy,
-                                                    4
-                                                )
-                                            );
-                                        }
-                                    }
-                                }
-                            },
-
-                            scales: {
-
-                                x: {
-
-                                    grid: {
-                                        color: "#e2ded4"
-                                    },
-
-                                    ticks: {
-
-                                        color: "#6b6a5f",
-
-                                        maxTicksLimit: 8,
-
-                                        autoSkip: true,
-
-                                        callback: function (
-                                            value
-                                        ) {
-
-                                            const date =
-                                                this.getLabelForValue(
-                                                    value
-                                                );
-
-                                            if (!date) {
-                                                return "";
-                                            }
-
-                                            const parsed =
-                                                new Date(date);
-
-                                            if (
-                                                isNaN(
-                                                    parsed.getTime()
-                                                )
-                                            ) {
-                                                return date;
-                                            }
-
-                                            return parsed.toLocaleDateString(
-                                                "en-GB",
-                                                {
-                                                    day: "2-digit",
-                                                    month: "short"
-                                                }
-                                            );
-                                        }
-                                    }
-                                },
-
-                                y: {
-
-                                    grid: {
-                                        color: "#e2ded4"
-                                    },
-
-                                    ticks: {
-
-                                        color: "#6b6a5f",
-
-                                        callback: function (value) {
-
-                                            return formatPrice(
-                                                value,
-                                                quoteCcy,
-                                                2
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                        }
                     }
                 );
 
-                status.textContent =
-                    cleanHistory.length +
-                    " trading days shown · Latest actual: " +
-                    formatPrice(
-                        values[values.length - 1],
-                        quoteCcy,
-                        4
-                    );
 
-            } catch (error) {
+            const values =
+                cleanHistory.map(
+                    function (item) {
 
-                console.error(
-                    "Historical chart creation error:",
-                    error
+                        return Number(
+                            item.price
+                        );
+
+                    }
                 );
 
-                status.innerHTML = `
-                    <span style="color:#a1372f">
-                        Historical chart could not be created:
-                        ${error.message}
-                    </span>
-                `;
+
+            if (
+                fxChart
+            ) {
+
+                fxChart.destroy();
+
+                fxChart = null;
+
             }
+
+
+            try {
+
+                fxChart =
+                    new Chart(
+
+                        canvas.getContext(
+                            "2d"
+                        ),
+
+                        {
+
+                            type: "line",
+
+
+                            data: {
+
+                                labels:
+                                    labels,
+
+
+                                datasets: [
+
+                                    {
+
+                                        label:
+                                            "Actual " +
+
+                                            (
+                                                data.pair_label
+                                                ||
+                                                currentPair
+                                            ),
+
+
+                                        data:
+                                            values,
+
+
+                                        borderColor:
+                                            "#1a2332",
+
+
+                                        backgroundColor:
+                                            "rgba(26,35,50,0.08)",
+
+
+                                        borderWidth: 2,
+
+
+                                        pointRadius:
+
+                                            cleanHistory.length > 60
+
+                                                ? 0
+
+                                                : 2,
+
+
+                                        pointHoverRadius:
+                                            5,
+
+
+                                        pointHitRadius:
+                                            12,
+
+
+                                        tension:
+                                            0.15,
+
+
+                                        fill:
+                                            true
+
+                                    }
+
+                                ]
+
+                            },
+
+
+                            options: {
+
+                                responsive:
+                                    true,
+
+
+                                maintainAspectRatio:
+                                    false,
+
+
+                                interaction: {
+
+                                    mode:
+                                        "index",
+
+                                    intersect:
+                                        false
+
+                                },
+
+
+                                plugins: {
+
+                                    legend: {
+
+                                        display:
+                                            true,
+
+                                        position:
+                                            "bottom"
+
+                                    },
+
+
+                                    tooltip: {
+
+                                        enabled:
+                                            true,
+
+
+                                        callbacks: {
+
+                                            title:
+                                                function (
+                                                    items
+                                                ) {
+
+                                                    if (
+                                                        !items.length
+                                                    ) {
+
+                                                        return "";
+
+                                                    }
+
+
+                                                    const date =
+                                                        labels[
+                                                            items[0]
+                                                                .dataIndex
+                                                        ];
+
+
+                                                    const parsed =
+                                                        new Date(
+                                                            date
+                                                        );
+
+
+                                                    if (
+                                                        isNaN(
+                                                            parsed.getTime()
+                                                        )
+                                                    ) {
+
+                                                        return date;
+
+                                                    }
+
+
+                                                    return parsed
+                                                        .toLocaleDateString(
+
+                                                            "en-GB",
+
+                                                            {
+
+                                                                day:
+                                                                    "2-digit",
+
+                                                                month:
+                                                                    "short",
+
+                                                                year:
+                                                                    "numeric"
+
+                                                            }
+
+                                                        );
+
+                                                },
+
+
+                                            label:
+                                                function (
+                                                    context
+                                                ) {
+
+                                                    return (
+
+                                                        " Actual close: "
+
+                                                        +
+
+                                                        formatPrice(
+
+                                                            context
+                                                                .parsed
+                                                                .y,
+
+                                                            quoteCcy,
+
+                                                            4
+
+                                                        )
+
+                                                    );
+
+                                                }
+
+                                        }
+
+                                    }
+
+                                },
+
+
+                                scales: {
+
+                                    x: {
+
+                                        grid: {
+
+                                            color:
+                                                "#e2ded4"
+
+                                        },
+
+
+                                        ticks: {
+
+                                            color:
+                                                "#6b6a5f",
+
+
+                                            maxTicksLimit:
+                                                8,
+
+
+                                            autoSkip:
+                                                true,
+
+
+                                            callback:
+                                                function (
+                                                    value
+                                                ) {
+
+                                                    const date =
+                                                        this.getLabelForValue(
+                                                            value
+                                                        );
+
+
+                                                    if (
+                                                        !date
+                                                    ) {
+
+                                                        return "";
+
+                                                    }
+
+
+                                                    const parsed =
+                                                        new Date(
+                                                            date
+                                                        );
+
+
+                                                    if (
+                                                        isNaN(
+                                                            parsed.getTime()
+                                                        )
+                                                    ) {
+
+                                                        return date;
+
+                                                    }
+
+
+                                                    return parsed
+                                                        .toLocaleDateString(
+
+                                                            "en-GB",
+
+                                                            {
+
+                                                                day:
+                                                                    "2-digit",
+
+                                                                month:
+                                                                    "short"
+
+                                                            }
+
+                                                        );
+
+                                                }
+
+                                        }
+
+                                    },
+
+
+                                    y: {
+
+                                        grid: {
+
+                                            color:
+                                                "#e2ded4"
+
+                                        },
+
+
+                                        ticks: {
+
+                                            color:
+                                                "#6b6a5f",
+
+
+                                            callback:
+                                                function (
+                                                    value
+                                                ) {
+
+                                                    return formatPrice(
+
+                                                        value,
+
+                                                        quoteCcy,
+
+                                                        2
+
+                                                    );
+
+                                                }
+
+                                        }
+
+                                    }
+
+                                }
+
+                            }
+
+                        }
+
+                    );
+
+
+                status.textContent =
+
+                    cleanHistory.length +
+
+                    " trading days shown · Latest actual: " +
+
+                    formatPrice(
+
+                        values[
+                            values.length - 1
+                        ],
+
+                        quoteCcy,
+
+                        4
+
+                    );
+
+            }
+
+
+            catch (error) {
+
+                console.error(
+
+                    "Historical chart creation error:",
+
+                    error
+
+                );
+
+
+                status.innerHTML = `
+
+                    <span
+                        style="color:#a1372f">
+
+                        Historical chart could not be created:
+
+                        ${error.message}
+
+                    </span>
+
+                `;
+
+            }
+
         }
 
 
@@ -1944,10 +3212,14 @@
         ========================================================== */
 
         window.addEventListener(
+
             "offline",
+
             function () {
 
-                if (syncStatus) {
+                if (
+                    syncStatus
+                ) {
 
                     syncStatus.textContent =
                         "· offline (last saved data)";
@@ -1955,31 +3227,29 @@
                 }
 
             }
+
         );
 
 
         window.addEventListener(
+
             "online",
+
             function () {
 
                 loadDashboard();
 
-                /*
-                 * Connectivity just came back. Refresh only the
-                 * pair currently on screen instead of requesting
-                 * all pairs from the backend.
-                 */
-
             }
+
         );
 
 
         /* =========================================================
-           REGISTER SERVICE WORKER
+           SERVICE WORKER
         ========================================================== */
-        // Service worker disabled for Capacitor Android app.
-// Capacitor handles the local app shell directly.
 
+        // Service worker disabled for Capacitor Android app.
+        // Capacitor handles the local app shell directly.
 
 
         /* =========================================================
