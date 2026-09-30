@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="en">
 
@@ -195,9 +196,6 @@
 
         /* =========================================================
            ERROR REFRESH BUTTON
-
-           Hidden during normal dashboard use.
-           Appears only when forecast loading fails.
         ========================================================== */
 
         .error-refresh-btn {
@@ -703,6 +701,33 @@
 
     <main>
 
+        <!-- =====================================================
+             PAIR SELECTOR
+
+             This is OUTSIDE #content so it never disappears
+             when an error screen is displayed.
+        ====================================================== -->
+
+        <div class="pair-switcher">
+
+            <span class="hint">
+                Other exchange rates:
+            </span>
+
+            <select
+                id="pairSelect"
+                class="pair-select">
+            </select>
+
+        </div>
+
+
+        <!-- =====================================================
+             DASHBOARD CONTENT
+
+             Only this section gets replaced when loading/rendering.
+        ====================================================== -->
+
         <div
             id="content"
             class="loading">
@@ -716,7 +741,8 @@
              ERROR REFRESH BUTTON
 
              Hidden normally.
-             Shown only when forecast loading fails.
+             Appears only when there is no usable saved data.
+             Pressing it returns to USD/INR.
         ====================================================== -->
 
         <button
@@ -1345,14 +1371,80 @@
 
 
         /* =========================================================
+           RENDER PAIR SELECTOR
+
+           The selector stays outside #content, so it remains
+           available even when a forecast fails.
+        ========================================================== */
+
+        function renderPairSelector() {
+
+            const pairSelect =
+                document.getElementById("pairSelect");
+
+
+            if (!pairSelect) {
+
+                return;
+
+            }
+
+
+            pairSelect.innerHTML =
+                availablePairs
+
+                    .filter(function (p) {
+
+                        return p.key !== "EMU";
+
+                    })
+
+                    .map(function (p) {
+
+                        const selected =
+                            p.key === currentPair
+                                ? " selected"
+                                : "";
+
+
+                        return `
+
+                            <option
+                                value="${p.key}"
+                                ${selected}>
+
+                                ${p.label}
+
+                            </option>
+
+                        `;
+
+                    })
+
+                    .join("");
+
+
+            pairSelect.onchange =
+                function () {
+
+                    switchPair(
+                        pairSelect.value
+                    );
+
+                };
+
+        }
+
+
+        /* =========================================================
            ERROR REFRESH ACTION
+
+           If a pair fails, Refresh ALWAYS returns to USD/INR.
         ========================================================== */
 
         async function handleErrorRefresh() {
 
-            if (
-                !errorRefreshButton
-            ) {
+            if (!errorRefreshButton) {
 
                 return;
 
@@ -1367,172 +1459,81 @@
                 "↻ Refreshing...";
 
 
-            if (
-                syncStatus
-            ) {
+            if (syncStatus) {
 
                 syncStatus.textContent =
-                    "· refreshing";
+                    "· updating...";
 
             }
 
 
-            try {
+            /*
+             * Always return to USD/INR.
+             */
 
-                const result =
-                    await refreshPair(
-                        currentPair
-                    );
-
-
-                if (
-                    result.success
-                    &&
-                    result.data
-                ) {
-
-                    const refreshedData =
-                        result.data;
+            currentPair =
+                "USDINR";
 
 
-                    let refreshedHistory =
-                        [];
+            localStorage.setItem(
+                "fx_selected_pair",
+                "USDINR"
+            );
 
 
-                    try {
+            /*
+             * Update the visible selector.
+             */
 
-                        const historyRes =
-                            await fetch(
-
-                                `${API_BASE}/api/history?pair=${encodeURIComponent(currentPair)}&_t=${Date.now()}`,
-
-                                {
-                                    cache:
-                                        "no-store"
-                                }
-
-                            );
+            const pairSelect =
+                document.getElementById("pairSelect");
 
 
-                        if (
-                            historyRes.ok
-                        ) {
+            if (pairSelect) {
 
-                            refreshedHistory =
-                                await historyRes.json();
-
-                        }
-
-                    }
-
-                    catch (historyError) {
-
-                        console.warn(
-
-                            "Historical data refresh failed:",
-
-                            historyError
-
-                        );
-
-                    }
-
-
-                    localStorage.setItem(
-
-                        forecastStorageKey(
-                            currentPair
-                        ),
-
-                        JSON.stringify(
-                            refreshedData
-                        )
-
-                    );
-
-
-                    localStorage.setItem(
-
-                        historyStorageKey(
-                            currentPair
-                        ),
-
-                        JSON.stringify(
-                            refreshedHistory
-                        )
-
-                    );
-
-
-                    render(
-
-                        refreshedData,
-
-                        refreshedHistory
-
-                    );
-
-
-                    if (
-                        syncStatus
-                    ) {
-
-                        syncStatus.textContent =
-                            "· live";
-
-                    }
-
-                }
-
-                else {
-
-                    showErrorRefreshButton();
-
-
-                    if (
-                        syncStatus
-                    ) {
-
-                        syncStatus.textContent =
-                            "· refresh failed";
-
-                    }
-
-                }
+                pairSelect.value =
+                    "USDINR";
 
             }
 
-            catch (error) {
 
-                console.error(
+            /*
+             * Hide the error screen/button
+             * while USD/INR is loading.
+             */
 
-                    "Error refresh failed:",
-
-                    error
-
-                );
+            hideErrorRefreshButton();
 
 
-                showErrorRefreshButton();
+            content.className =
+                "loading";
 
 
-                if (
-                    syncStatus
-                ) {
+            content.innerHTML =
+                "Fetching USD/INR forecast…";
 
-                    syncStatus.textContent =
-                        "· refresh failed";
 
-                }
+            window.scrollTo({
 
-            }
+                top: 0,
+
+                behavior: "smooth"
+
+            });
+
+
+            /*
+             * Load USD/INR normally.
+             */
+
+            await loadDashboard();
 
         }
 
 
         /* =========================================================
            LOAD PAIRS
-           
+
            EMU IS REMOVED.
         ========================================================== */
 
@@ -1628,6 +1629,7 @@
 
                         );
 
+
                         availablePairs = [];
 
                     }
@@ -1663,13 +1665,9 @@
 
                         {
                             key: "USDINR",
-
                             label: "USD/INR",
-
                             base: "USD",
-
                             quote: "INR"
-
                         }
 
                     ];
@@ -1727,6 +1725,15 @@
             }
 
 
+            /* =========================================================
+               CREATE PAIR SELECTOR
+
+               This stays visible even when the dashboard errors.
+            ========================================================== */
+
+            renderPairSelector();
+
+
             loadDashboard();
 
         }
@@ -1739,7 +1746,7 @@
         function switchPair(pairKey) {
 
             if (
-                pairKey === currentPair
+                pairKey === "EMU"
             ) {
 
                 return;
@@ -1748,7 +1755,11 @@
 
 
             if (
-                pairKey === "EMU"
+                !availablePairs.some(function (p) {
+
+                    return p.key === pairKey;
+
+                })
             ) {
 
                 return;
@@ -1767,6 +1778,18 @@
                 currentPair
 
             );
+
+
+            const pairSelect =
+                document.getElementById("pairSelect");
+
+
+            if (pairSelect) {
+
+                pairSelect.value =
+                    currentPair;
+
+            }
 
 
             hideErrorRefreshButton();
@@ -1917,7 +1940,7 @@
                 ) {
 
                     syncStatus.textContent =
-                        "· last data saved";
+                        "· offline (no saved data yet)";
 
                 }
 
@@ -2127,7 +2150,6 @@
 
 
                 /*
-                 * IMPORTANT:
                  * Successful API request = live.
                  */
 
@@ -2524,64 +2546,6 @@
 
                     </div>
 
-
-                    <!-- =================================================
-                         PAIR SELECTOR
-                         
-                         NO REFRESH BUTTON HERE.
-                    ================================================== -->
-
-                    <div class="pair-switcher">
-
-                        <span class="hint">
-
-                            Other exchange rates:
-
-                        </span>
-
-
-                        <select
-                            id="pairSelect"
-                            class="pair-select">
-
-                            ${
-                                availablePairs
-
-                                    .map(
-                                        function (p) {
-
-                                            const selected =
-                                                p.key ===
-                                                currentPair
-
-                                                    ? " selected"
-
-                                                    : "";
-
-
-                                            return `
-
-                                                <option
-                                                    value="${p.key}"
-                                                    ${selected}>
-
-                                                    ${p.label}
-
-                                                </option>
-
-                                            `;
-
-                                        }
-                                    )
-
-                                    .join("")
-
-                            }
-
-                        </select>
-
-                    </div>
-
                 </div>
 
 
@@ -2710,7 +2674,7 @@
 
                     <!-- =================================================
                          RANDOM WALK
-                         
+
                          ONLY BENCHMARK.
                     ================================================== -->
 
@@ -2815,37 +2779,6 @@
                 quoteCcy
 
             );
-
-
-            /* =========================================================
-               PAIR SELECTOR EVENT
-            ========================================================== */
-
-            const pairSelect =
-                document.getElementById(
-                    "pairSelect"
-                );
-
-
-            if (
-                pairSelect
-            ) {
-
-                pairSelect.addEventListener(
-
-                    "change",
-
-                    function () {
-
-                        switchPair(
-                            pairSelect.value
-                        );
-
-                    }
-
-                );
-
-            }
 
         }
 
@@ -3462,12 +3395,10 @@
 
         /* =========================================================
            SERVICE WORKER
-        ========================================================== */
 
-        /*
-         * Service worker disabled for Capacitor Android.
-         * Capacitor handles the local app shell directly.
-         */
+           Service worker disabled for Capacitor Android.
+           Capacitor handles the local app shell directly.
+        ========================================================== */
 
 
         /* =========================================================
@@ -3482,3 +3413,5 @@
 </body>
 
 </html>
+```
+
