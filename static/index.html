@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 
@@ -2722,7 +2721,7 @@
 
 
                 <!-- =================================================
-                     HISTORICAL FX CHART
+                     ACTUAL VS PREDICTED FX CHART
                 ================================================== -->
 
                 <div id="chart-wrap">
@@ -2732,7 +2731,7 @@
                         <h2>
 
                             ${pairLabel}
-                            — Actual vs Forecast FX Rate
+                            — Actual vs Predicted FX Rate
 
                         </h2>
 
@@ -2750,9 +2749,9 @@
 
                     <div class="chart-help">
 
-                        Actual end-of-day closing rates ·
-                        One point per trading day ·
-                        New data extends the line automatically
+                        Solid line: actual closing rate ·
+                        Dashed gold line: selected model's predicted rate ·
+                        Diamond: tomorrow's forecast
 
                     </div>
 
@@ -2761,7 +2760,7 @@
                         id="chartStatus"
                         class="chart-status">
 
-                        Preparing historical chart…
+                        Preparing chart…
 
                     </div>
 
@@ -2784,234 +2783,252 @@
 
 
         /* =========================================================
-           HISTORICAL CHART
+           CHART (ACTUAL VS PREDICTED)
         ========================================================== */
+
         function createInteractiveChart(history, data, quoteCcy) {
 
-    const canvas = document.getElementById("fxChart");
-    const status = document.getElementById("chartStatus");
+            const canvas = document.getElementById("fxChart");
+            const status = document.getElementById("chartStatus");
 
-    if (!canvas || typeof Chart === "undefined") {
-        if (status) status.textContent = "Historical chart is unavailable.";
-        return;
-    }
+            if (!canvas || typeof Chart === "undefined") {
+                if (status) status.textContent = "Historical chart is unavailable.";
+                return;
+            }
 
-    if (!Array.isArray(history) || history.length === 0) {
-        status.textContent = "No historical FX data available.";
-        return;
-    }
+            if (!Array.isArray(history) || history.length === 0) {
+                status.textContent = "No historical FX data available.";
+                return;
+            }
 
-    const cleanHistory = history
-        .filter(function (item) {
-            return item && item.date && Number.isFinite(Number(item.price));
-        })
-        .sort(function (a, b) {
-            return new Date(a.date) - new Date(b.date);
-        });
+            let cleanHistory = history
+                .filter(function (item) {
+                    return item && item.date && Number.isFinite(Number(item.price));
+                })
+                .sort(function (a, b) {
+                    return new Date(a.date) - new Date(b.date);
+                });
 
-    if (cleanHistory.length === 0) {
-        status.textContent = "No valid historical FX data available.";
-        return;
-    }
+            if (cleanHistory.length === 0) {
+                status.textContent = "No valid historical FX data available.";
+                return;
+            }
 
-    const labels = cleanHistory.map(function (item) { return item.date; });
-    const actualValues = cleanHistory.map(function (item) { return Number(item.price); });
-    const actualCount = actualValues.length;
+            /* ---- selected model ---- */
 
-    /* ---- selected model + its past predictions ---- */
+            const selectedModel = getSelectedModel(data);
+            const predKey = selectedModel ? selectedModel.key : "random_walk";
+            const predLabel = selectedModel
+                ? selectedModel.label + " predicted"
+                : "Random Walk predicted";
 
-    const selectedModel = getSelectedModel(data);
+            /* ---- zoom to the window where predictions exist ---- */
 
-    const predKey = selectedModel ? selectedModel.key : "random_walk";
+            const firstPredIdx = cleanHistory.findIndex(function (item) {
+                const v = Number(item[predKey]);
+                return item[predKey] !== undefined && item[predKey] !== null && Number.isFinite(v);
+            });
 
-    const predLabel = selectedModel
-        ? selectedModel.label + " predicted"
-        : "Random Walk predicted";
+            if (firstPredIdx >= 0) {
+                cleanHistory = cleanHistory.slice(Math.max(0, firstPredIdx - 3));
+            }
 
-    const predictedValues = cleanHistory.map(function (item) {
-        const raw = item[predKey];
-        if (raw === undefined || raw === null) return null;
-        const v = Number(raw);
-        return Number.isFinite(v) ? v : null;
-    });
+            const labels = cleanHistory.map(function (item) { return item.date; });
+            const actualValues = cleanHistory.map(function (item) { return Number(item.price); });
+            const actualCount = actualValues.length;
 
-    const hasBacktest = predictedValues.some(function (v) { return v !== null; });
+            const predictedValues = cleanHistory.map(function (item) {
+                const raw = item[predKey];
+                if (raw === undefined || raw === null) return null;
+                const v = Number(raw);
+                return Number.isFinite(v) ? v : null;
+            });
 
-    /* ---- tomorrow's forecast ---- */
+            const hasBacktest = predictedValues.some(function (v) { return v !== null; });
 
-    const forecastValue = selectedModel
-        ? Number(data[selectedModel.key])
-        : Number(data.random_walk);
+            /* ---- tomorrow's forecast ---- */
 
-    const forecastDate = data.forecast_date;
+            const forecastValue = selectedModel
+                ? Number(data[selectedModel.key])
+                : Number(data.random_walk);
 
-    const hasForecast =
-        Number.isFinite(forecastValue) &&
-        forecastDate &&
-        !labels.includes(String(forecastDate));
+            const forecastDate = data.forecast_date;
 
-    if (hasForecast) {
+            const hasForecast =
+                Number.isFinite(forecastValue) &&
+                forecastDate &&
+                !labels.includes(String(forecastDate));
 
-        labels.push(String(forecastDate));
-        actualValues.push(null);
-        predictedValues.push(forecastValue);
+            if (hasForecast) {
+                labels.push(String(forecastDate));
+                actualValues.push(null);
+                predictedValues.push(forecastValue);
 
-        if (!hasBacktest) {
-            predictedValues[actualCount - 1] = actualValues[actualCount - 1];
-        }
-    }
-
-    const forecastIndex = hasForecast ? actualCount : -1;
-
-    /* ---- datasets ---- */
-
-    const datasets = [
-        {
-            label: "Actual " + (data.pair_label || currentPair),
-            data: actualValues,
-            borderColor: "#1a2332",
-            backgroundColor: "rgba(26,35,50,0.08)",
-            borderWidth: 2,
-            pointRadius: cleanHistory.length > 60 ? 0 : 2,
-            pointHoverRadius: 5,
-            pointHitRadius: 12,
-            tension: 0.15,
-            fill: true
-        }
-    ];
-
-    if (hasBacktest || hasForecast) {
-        datasets.push({
-            label: predLabel,
-            data: predictedValues,
-            borderColor: "#a9822f",
-            backgroundColor: "#a9822f",
-            borderWidth: 2,
-            borderDash: [6, 5],
-            pointRadius: function (ctx) {
-                return ctx.dataIndex === forecastIndex ? 6 : 0;
-            },
-            pointHoverRadius: 7,
-            pointHitRadius: 12,
-            pointStyle: "rectRot",
-            tension: 0.15,
-            fill: false,
-            spanGaps: false
-        });
-    }
-
-    if (fxChart) {
-        fxChart.destroy();
-        fxChart = null;
-    }
-
-    try {
-
-        fxChart = new Chart(canvas.getContext("2d"), {
-
-            type: "line",
-
-            data: { labels: labels, datasets: datasets },
-
-            options: {
-
-                responsive: true,
-                maintainAspectRatio: false,
-
-                interaction: { mode: "index", intersect: false },
-
-                plugins: {
-
-                    legend: { display: true, position: "bottom" },
-
-                    tooltip: {
-
-                        enabled: true,
-
-                        callbacks: {
-
-                            title: function (items) {
-                                if (!items.length) return "";
-                                const date = labels[items[0].dataIndex];
-                                const parsed = new Date(date);
-                                if (isNaN(parsed.getTime())) return date;
-                                return parsed.toLocaleDateString("en-GB", {
-                                    day: "2-digit",
-                                    month: "short",
-                                    year: "numeric"
-                                });
-                            },
-
-                            label: function (context) {
-
-                                if (context.parsed.y === null || context.parsed.y === undefined) {
-                                    return null;
-                                }
-
-                                const isPredicted = context.datasetIndex === 1;
-
-                                return (
-                                    (isPredicted ? " Predicted: " : " Actual close: ") +
-                                    formatPrice(context.parsed.y, quoteCcy, 4)
-                                );
-                            }
-                        }
-                    }
-                },
-
-                scales: {
-
-                    x: {
-                        grid: { color: "#e2ded4" },
-                        ticks: {
-                            color: "#6b6a5f",
-                            maxTicksLimit: 8,
-                            autoSkip: true,
-                            callback: function (value) {
-                                const date = this.getLabelForValue(value);
-                                if (!date) return "";
-                                const parsed = new Date(date);
-                                if (isNaN(parsed.getTime())) return date;
-                                return parsed.toLocaleDateString("en-GB", {
-                                    day: "2-digit",
-                                    month: "short"
-                                });
-                            }
-                        }
-                    },
-
-                    y: {
-                        grid: { color: "#e2ded4" },
-                        ticks: {
-                            color: "#6b6a5f",
-                            callback: function (value) {
-                                return formatPrice(value, quoteCcy, 2);
-                            }
-                        }
-                    }
+                if (!hasBacktest) {
+                    predictedValues[actualCount - 1] = actualValues[actualCount - 1];
                 }
             }
-        });
 
-        status.textContent =
-            cleanHistory.length +
-            " trading days shown · Latest actual: " +
-            formatPrice(actualValues[actualCount - 1], quoteCcy, 4) +
-            (hasForecast
-                ? " · Forecast (" + forecastDate + "): " + formatPrice(forecastValue, quoteCcy, 4)
-                : "");
+            const forecastIndex = hasForecast ? actualCount : -1;
 
-    } catch (error) {
+            const isMobile = window.innerWidth < 640;
 
-        console.error("Chart creation error:", error);
+            /* ---- datasets ---- */
 
-        status.innerHTML =
-            '<span style="color:#a1372f">Chart could not be created: ' +
-            error.message +
-            "</span>";
-    }
+            const datasets = [
+                {
+                    label: "Actual " + (data.pair_label || currentPair),
+                    data: actualValues,
+                    borderColor: "#1a2332",
+                    backgroundColor: "rgba(26,35,50,0.06)",
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    pointHoverRadius: 5,
+                    pointHitRadius: 12,
+                    tension: 0.15,
+                    fill: true,
+                    order: 2
+                }
+            ];
 
-}    
+            if (hasBacktest || hasForecast) {
+                datasets.push({
+                    label: predLabel,
+                    data: predictedValues,
+                    borderColor: "#c9962f",
+                    backgroundColor: "#c9962f",
+                    borderWidth: 2.5,
+                    borderDash: [5, 4],
+                    pointRadius: function (ctx) {
+                        return ctx.dataIndex === forecastIndex ? 6 : 0;
+                    },
+                    pointHoverRadius: 7,
+                    pointHitRadius: 12,
+                    pointStyle: "rectRot",
+                    tension: 0.15,
+                    fill: false,
+                    spanGaps: false,
+                    order: 1
+                });
+            }
+
+            if (fxChart) {
+                fxChart.destroy();
+                fxChart = null;
+            }
+
+            try {
+
+                fxChart = new Chart(canvas.getContext("2d"), {
+
+                    type: "line",
+
+                    data: { labels: labels, datasets: datasets },
+
+                    options: {
+
+                        responsive: true,
+                        maintainAspectRatio: false,
+
+                        interaction: { mode: "index", intersect: false },
+
+                        plugins: {
+
+                            legend: { display: true, position: "bottom" },
+
+                            tooltip: {
+
+                                enabled: true,
+
+                                callbacks: {
+
+                                    title: function (items) {
+                                        if (!items.length) return "";
+                                        const date = labels[items[0].dataIndex];
+                                        const parsed = new Date(date);
+                                        if (isNaN(parsed.getTime())) return date;
+                                        return parsed.toLocaleDateString("en-GB", {
+                                            day: "2-digit",
+                                            month: "short",
+                                            year: "numeric"
+                                        });
+                                    },
+
+                                    label: function (context) {
+
+                                        if (context.parsed.y === null || context.parsed.y === undefined) {
+                                            return null;
+                                        }
+
+                                        const isPredicted = context.datasetIndex === 1;
+
+                                        return (
+                                            (isPredicted ? " Predicted: " : " Actual close: ") +
+                                            formatPrice(context.parsed.y, quoteCcy, 4)
+                                        );
+                                    }
+                                }
+                            }
+                        },
+
+                        scales: {
+
+                            x: {
+                                grid: { color: "#e2ded4" },
+                                ticks: {
+                                    color: "#6b6a5f",
+                                    maxTicksLimit: isMobile ? 4 : 8,
+                                    maxRotation: 0,
+                                    minRotation: 0,
+                                    autoSkip: true,
+                                    callback: function (value) {
+                                        const date = this.getLabelForValue(value);
+                                        if (!date) return "";
+                                        const parsed = new Date(date);
+                                        if (isNaN(parsed.getTime())) return date;
+                                        return parsed.toLocaleDateString("en-GB", {
+                                            day: "2-digit",
+                                            month: "short"
+                                        });
+                                    }
+                                }
+                            },
+
+                            y: {
+                                grid: { color: "#e2ded4" },
+                                ticks: {
+                                    color: "#6b6a5f",
+                                    maxTicksLimit: isMobile ? 6 : 10,
+                                    callback: function (value) {
+                                        return formatPrice(value, quoteCcy, 2);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                status.textContent =
+                    cleanHistory.length +
+                    " trading days shown · Latest actual: " +
+                    formatPrice(actualValues[actualCount - 1], quoteCcy, 4) +
+                    (hasForecast
+                        ? " · Forecast (" + forecastDate + "): " + formatPrice(forecastValue, quoteCcy, 4)
+                        : "");
+
+            } catch (error) {
+
+                console.error("Chart creation error:", error);
+
+                status.innerHTML =
+                    '<span style="color:#a1372f">Chart could not be created: ' +
+                    error.message +
+                    "</span>";
+
+            }
+
+        }
+
 
         /* =========================================================
            ONLINE / OFFLINE STATUS
@@ -3119,5 +3136,3 @@
 </body>
 
 </html>
-
-
