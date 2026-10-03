@@ -61,6 +61,15 @@ MIN_ROLLING_DAYS = 3
 
 
 # ============================================================
+# BACKTEST SETTINGS (past predictions shown on the chart)
+# ============================================================
+
+BACKTEST_DAYS = 60
+
+BACKTEST_RETRAIN_EVERY = 20
+
+
+# ============================================================
 # APP SETTINGS
 # ============================================================
 
@@ -424,88 +433,49 @@ def build_features(df):
     # RETURNS
     # --------------------------------------------------------
 
-    df["ret_1"] = (
-        df["price"].pct_change(1)
-    )
+    df["ret_1"] = df["price"].pct_change(1)
 
-    df["ret_5"] = (
-        df["price"].pct_change(5)
-    )
+    df["ret_5"] = df["price"].pct_change(5)
 
-    df["ret_10"] = (
-        df["price"].pct_change(10)
-    )
+    df["ret_10"] = df["price"].pct_change(10)
 
-    df["ret_20"] = (
-        df["price"].pct_change(20)
-    )
+    df["ret_20"] = df["price"].pct_change(20)
 
 
     # --------------------------------------------------------
     # VOLATILITY
     # --------------------------------------------------------
 
-    df["vol_5"] = (
-        df["ret_1"]
-        .rolling(5)
-        .std()
-    )
+    df["vol_5"] = df["ret_1"].rolling(5).std()
 
-    df["vol_20"] = (
-        df["ret_1"]
-        .rolling(20)
-        .std()
-    )
+    df["vol_20"] = df["ret_1"].rolling(20).std()
 
 
     # --------------------------------------------------------
     # MOVING AVERAGES
     # --------------------------------------------------------
 
-    df["ma_5"] = (
-        df["price"]
-        .rolling(5)
-        .mean()
-    )
+    df["ma_5"] = df["price"].rolling(5).mean()
 
-    df["ma_20"] = (
-        df["price"]
-        .rolling(20)
-        .mean()
-    )
+    df["ma_20"] = df["price"].rolling(20).mean()
 
-    df["price_ma5_ratio"] = (
-        df["price"] /
-        df["ma_5"]
-    )
+    df["price_ma5_ratio"] = df["price"] / df["ma_5"]
 
-    df["price_ma20_ratio"] = (
-        df["price"] /
-        df["ma_20"]
-    )
+    df["price_ma20_ratio"] = df["price"] / df["ma_20"]
 
-    df["ma_ratio"] = (
-        df["ma_5"] /
-        df["ma_20"]
-    )
+    df["ma_ratio"] = df["ma_5"] / df["ma_20"]
 
 
     # --------------------------------------------------------
     # RSI 14
     #
-    # Explicitly handle:
-    #
     # 1. Normal gain/loss
     # 2. Gain > 0 and loss == 0 -> RSI 100
     # 3. Gain == 0 and loss > 0 -> RSI 0
     # 4. Gain == 0 and loss == 0 -> RSI 50
-    #
-    # This prevents unnecessary NaN values.
     # --------------------------------------------------------
 
-    delta = (
-        df["price"].diff()
-    )
+    delta = df["price"].diff()
 
     gain = (
         delta
@@ -527,63 +497,43 @@ def build_features(df):
         dtype=float
     )
 
-    normal_loss = (
-        loss > 0
-    )
+    normal_loss = (loss > 0)
 
     rs.loc[normal_loss] = (
         gain.loc[normal_loss] /
         loss.loc[normal_loss]
     )
 
-    # Gain exists but no loss.
+    df["rsi_14"] = np.nan
+
     no_loss = (
         (loss == 0) &
         (gain > 0)
     )
 
-    df.loc[
-        no_loss,
-        "rsi_14"
-    ] = 100.0
+    df.loc[no_loss, "rsi_14"] = 100.0
 
-    # Loss exists but no gain.
     no_gain = (
         (gain == 0) &
         (loss > 0)
     )
 
-    df.loc[
-        no_gain,
-        "rsi_14"
-    ] = 0.0
+    df.loc[no_gain, "rsi_14"] = 0.0
 
-    # No movement.
     no_movement = (
         (gain == 0) &
         (loss == 0)
     )
 
-    df.loc[
-        no_movement,
-        "rsi_14"
-    ] = 50.0
+    df.loc[no_movement, "rsi_14"] = 50.0
 
-    # Normal RSI calculation.
-    normal_rsi = (
-        normal_loss
-    )
-
-    df.loc[
-        normal_rsi,
-        "rsi_14"
-    ] = (
+    df.loc[normal_loss, "rsi_14"] = (
         100 -
         (
             100 /
             (
                 1 +
-                rs.loc[normal_rsi]
+                rs.loc[normal_loss]
             )
         )
     )
@@ -693,10 +643,8 @@ def load_forecast_archive(
     pair_key
 ):
 
-    path = (
-        forecast_archive_file_path(
-            pair_key
-        )
+    path = forecast_archive_file_path(
+        pair_key
     )
 
     if not os.path.exists(path):
@@ -728,10 +676,8 @@ def save_forecast_archive(
     archive
 ):
 
-    path = (
-        forecast_archive_file_path(
-            pair_key
-        )
+    path = forecast_archive_file_path(
+        pair_key
     )
 
     with open(
@@ -752,16 +698,12 @@ def archive_forecast(
     result
 ):
 
-    archive = (
-        load_forecast_archive(
-            pair_key
-        )
+    archive = load_forecast_archive(
+        pair_key
     )
 
-    forecast_date = (
-        result.get(
-            "forecast_date"
-        )
+    forecast_date = result.get(
+        "forecast_date"
     )
 
     archive = [
@@ -797,10 +739,8 @@ def select_model_rolling_window(
     min_days=MIN_ROLLING_DAYS
 ):
 
-    archive = (
-        load_forecast_archive(
-            pair_key
-        )
+    archive = load_forecast_archive(
+        pair_key
     )
 
     if not archive:
@@ -823,10 +763,8 @@ def select_model_rolling_window(
 
     for item in archive:
 
-        forecast_date = (
-            item.get(
-                "forecast_date"
-            )
+        forecast_date = item.get(
+            "forecast_date"
         )
 
         if forecast_date in date_to_price:
@@ -1039,42 +977,30 @@ def historical_model_selection(
 
             continue
 
-        X_train = (
-            train[FEATURE_COLS]
-        )
+        X_train = train[FEATURE_COLS]
 
-        y_train = (
-            train["target_logret"]
-        )
+        y_train = train["target_logret"]
 
-        X_test = (
-            test[FEATURE_COLS]
-        )
+        X_test = test[FEATURE_COLS]
 
         # ----------------------------------------------------
         # Safety validation
         # ----------------------------------------------------
 
         if not np.isfinite(
-            X_train.to_numpy(
-                dtype=float
-            )
+            X_train.to_numpy(dtype=float)
         ).all():
 
             continue
 
         if not np.isfinite(
-            y_train.to_numpy(
-                dtype=float
-            )
+            y_train.to_numpy(dtype=float)
         ).all():
 
             continue
 
         if not np.isfinite(
-            X_test.to_numpy(
-                dtype=float
-            )
+            X_test.to_numpy(dtype=float)
         ).all():
 
             continue
@@ -1098,37 +1024,26 @@ def historical_model_selection(
 
         try:
 
-            scaler = (
-                StandardScaler()
+            scaler = StandardScaler()
+
+            X_train_scaled = scaler.fit_transform(
+                X_train
             )
 
-            X_train_scaled = (
-                scaler.fit_transform(
-                    X_train
-                )
+            X_test_scaled = scaler.transform(
+                X_test
             )
 
-            X_test_scaled = (
-                scaler.transform(
-                    X_test
-                )
-            )
-
-            model = (
-                create_ridge_model()
-            )
+            model = create_ridge_model()
 
             model.fit(
                 X_train_scaled,
                 y_train
             )
 
-            pred = (
-                model
-                .predict(
-                    X_test_scaled
-                )[0]
-            )
+            pred = model.predict(
+                X_test_scaled
+            )[0]
 
             forecast = (
                 previous_price *
@@ -1139,9 +1054,7 @@ def historical_model_selection(
                 forecast
             ):
 
-                errors[
-                    "ridge"
-                ].append(
+                errors["ridge"].append(
                     abs(
                         actual_price -
                         forecast
@@ -1161,21 +1074,16 @@ def historical_model_selection(
 
         try:
 
-            model = (
-                create_tree_model()
-            )
+            model = create_tree_model()
 
             model.fit(
                 X_train,
                 y_train
             )
 
-            pred = (
-                model
-                .predict(
-                    X_test
-                )[0]
-            )
+            pred = model.predict(
+                X_test
+            )[0]
 
             forecast = (
                 previous_price *
@@ -1186,9 +1094,7 @@ def historical_model_selection(
                 forecast
             ):
 
-                errors[
-                    "decision_tree"
-                ].append(
+                errors["decision_tree"].append(
                     abs(
                         actual_price -
                         forecast
@@ -1208,37 +1114,26 @@ def historical_model_selection(
 
         try:
 
-            scaler = (
-                StandardScaler()
+            scaler = StandardScaler()
+
+            X_train_scaled = scaler.fit_transform(
+                X_train
             )
 
-            X_train_scaled = (
-                scaler.fit_transform(
-                    X_train
-                )
+            X_test_scaled = scaler.transform(
+                X_test
             )
 
-            X_test_scaled = (
-                scaler.transform(
-                    X_test
-                )
-            )
-
-            model = (
-                create_mlp_model()
-            )
+            model = create_mlp_model()
 
             model.fit(
                 X_train_scaled,
                 y_train
             )
 
-            pred = (
-                model
-                .predict(
-                    X_test_scaled
-                )[0]
-            )
+            pred = model.predict(
+                X_test_scaled
+            )[0]
 
             pred = clip_logret(
                 pred
@@ -1253,9 +1148,7 @@ def historical_model_selection(
                 forecast
             ):
 
-                errors[
-                    "mlp"
-                ].append(
+                errors["mlp"].append(
                     abs(
                         actual_price -
                         forecast
@@ -1281,13 +1174,9 @@ def historical_model_selection(
                     <= test_year
                 ]
                 .dropna(
-                    subset=[
-                        "ppp_rate"
-                    ]
+                    subset=["ppp_rate"]
                 )
-                .sort_values(
-                    "year"
-                )
+                .sort_values("year")
             )
 
             if not ppp_rows.empty:
@@ -1302,9 +1191,7 @@ def historical_model_selection(
                     ppp_forecast
                 ):
 
-                    errors[
-                        "ppp"
-                    ].append(
+                    errors["ppp"].append(
                         abs(
                             actual_price -
                             ppp_forecast
@@ -1335,27 +1222,19 @@ def historical_model_selection(
                         "base_rate_decimal"
                     ]
                 )
-                .sort_values(
-                    "year"
-                )
+                .sort_values("year")
             )
 
             if not rate_rows.empty:
 
-                row = (
-                    rate_rows.iloc[-1]
-                )
+                row = rate_rows.iloc[-1]
 
                 quote_rate = float(
-                    row[
-                        "quote_rate_decimal"
-                    ]
+                    row["quote_rate_decimal"]
                 )
 
                 base_rate = float(
-                    row[
-                        "base_rate_decimal"
-                    ]
+                    row["base_rate_decimal"]
                 )
 
                 irp_forecast = (
@@ -1371,9 +1250,7 @@ def historical_model_selection(
                     irp_forecast
                 ):
 
-                    errors[
-                        "irp"
-                    ].append(
+                    errors["irp"].append(
                         abs(
                             actual_price -
                             irp_forecast
@@ -1456,6 +1333,173 @@ def historical_model_selection(
         }
 
     }
+
+
+# ============================================================
+# BACKTEST (PAST PREDICTIONS FOR THE CHART)
+# ============================================================
+
+def compute_backtest(
+    df,
+    ppp_data,
+    rates,
+    days=BACKTEST_DAYS,
+    retrain_every=BACKTEST_RETRAIN_EVERY
+):
+
+    data = (
+        df
+        .replace([np.inf, -np.inf], np.nan)
+        .reset_index(drop=True)
+    )
+
+    n = len(data)
+
+    start = max(MIN_TRAIN_DAYS, n - days - 1)
+
+    results = {}
+
+    ridge_m = None
+    tree_m = None
+    mlp_m = None
+    scaler = None
+
+    for step, i in enumerate(range(start, n - 1)):
+
+        target_date = (
+            data["date"].iloc[i + 1]
+            .strftime("%Y-%m-%d")
+        )
+
+        prev_price = float(data["price"].iloc[i])
+
+        target_year = int(data["year"].iloc[i + 1])
+
+        row = {"random_walk": round(prev_price, 4)}
+
+        # ---- retrain every N steps ----
+
+        if step % retrain_every == 0 or ridge_m is None:
+
+            train = (
+                data.iloc[:i]
+                .dropna(subset=FEATURE_COLS + ["target_logret"])
+            )
+
+            if len(train) >= 100:
+
+                try:
+
+                    X_tr = train[FEATURE_COLS]
+                    y_tr = train["target_logret"]
+
+                    new_scaler = StandardScaler()
+                    X_tr_scaled = new_scaler.fit_transform(X_tr)
+
+                    new_ridge = create_ridge_model()
+                    new_ridge.fit(X_tr_scaled, y_tr)
+
+                    new_tree = create_tree_model()
+                    new_tree.fit(X_tr, y_tr)
+
+                    new_mlp = create_mlp_model()
+                    new_mlp.fit(X_tr_scaled, y_tr)
+
+                    scaler = new_scaler
+                    ridge_m = new_ridge
+                    tree_m = new_tree
+                    mlp_m = new_mlp
+
+                except Exception as e:
+
+                    print(f"Backtest training error: {e}")
+
+        # ---- ML predictions ----
+
+        x_today = data.iloc[[i]][FEATURE_COLS]
+
+        if (
+            ridge_m is not None
+            and not x_today.isnull().values.any()
+        ):
+
+            try:
+
+                xs = scaler.transform(x_today)
+
+                row["ridge"] = round(
+                    prev_price * float(np.exp(ridge_m.predict(xs)[0])),
+                    4
+                )
+
+                row["decision_tree"] = round(
+                    prev_price * float(np.exp(tree_m.predict(x_today)[0])),
+                    4
+                )
+
+                row["mlp"] = round(
+                    prev_price * float(
+                        np.exp(clip_logret(mlp_m.predict(xs)[0]))
+                    ),
+                    4
+                )
+
+            except Exception as e:
+
+                print(f"Backtest predict error: {e}")
+
+        # ---- PPP ----
+
+        try:
+
+            ppp_rows = (
+                ppp_data[ppp_data["year"] <= target_year]
+                .dropna(subset=["ppp_rate"])
+                .sort_values("year")
+            )
+
+            if not ppp_rows.empty:
+
+                row["ppp"] = round(
+                    float(ppp_rows.iloc[-1]["ppp_rate"]),
+                    4
+                )
+
+        except Exception:
+
+            pass
+
+        # ---- IRP ----
+
+        try:
+
+            rate_rows = (
+                rates[rates["year"] <= target_year]
+                .dropna(subset=["quote_rate_decimal", "base_rate_decimal"])
+                .sort_values("year")
+            )
+
+            if not rate_rows.empty:
+
+                r = rate_rows.iloc[-1]
+
+                row["irp"] = round(
+                    prev_price * (
+                        (1 + float(r["quote_rate_decimal"]))
+                        / (1 + float(r["base_rate_decimal"]))
+                    ) ** (1 / DAYS_IN_YEAR),
+                    4
+                )
+
+        except Exception:
+
+            pass
+
+        results[target_date] = row
+
+    gc.collect()
+
+    return results
 
 
 # ============================================================
@@ -1600,8 +1644,7 @@ def run_forecast_pipeline(
         )
         .rename(
             columns={
-                "value":
-                    "quote_cpi"
+                "value": "quote_cpi"
             }
         )
     )
@@ -1614,8 +1657,7 @@ def run_forecast_pipeline(
         )
         .rename(
             columns={
-                "value":
-                    "base_cpi"
+                "value": "base_cpi"
             }
         )
     )
@@ -1642,8 +1684,7 @@ def run_forecast_pipeline(
         .reset_index()
         .rename(
             columns={
-                "price":
-                    "average_price"
+                "price": "average_price"
             }
         )
     )
@@ -1683,44 +1724,30 @@ def run_forecast_pipeline(
         )
 
 
-    base_row = (
-        base_rows.iloc[0]
-    )
+    base_row = base_rows.iloc[0]
 
 
     base_price = float(
-        base_row[
-            "average_price"
-        ]
+        base_row["average_price"]
     )
 
 
     base_quote_cpi = float(
-        base_row[
-            "quote_cpi"
-        ]
+        base_row["quote_cpi"]
     )
 
 
     base_base_cpi = float(
-        base_row[
-            "base_cpi"
-        ]
+        base_row["base_cpi"]
     )
 
 
     if (
-        not np.isfinite(
-            base_price
-        )
+        not np.isfinite(base_price)
         or
-        not np.isfinite(
-            base_quote_cpi
-        )
+        not np.isfinite(base_quote_cpi)
         or
-        not np.isfinite(
-            base_base_cpi
-        )
+        not np.isfinite(base_base_cpi)
         or
         base_quote_cpi == 0
         or
@@ -1740,9 +1767,7 @@ def run_forecast_pipeline(
         *
 
         (
-            ppp_data[
-                "quote_cpi"
-            ]
+            ppp_data["quote_cpi"]
             /
             base_quote_cpi
         )
@@ -1750,9 +1775,7 @@ def run_forecast_pipeline(
         /
 
         (
-            ppp_data[
-                "base_cpi"
-            ]
+            ppp_data["base_cpi"]
             /
             base_base_cpi
         )
@@ -1771,8 +1794,7 @@ def run_forecast_pipeline(
         )
         .rename(
             columns={
-                "value":
-                    "quote_rate"
+                "value": "quote_rate"
             }
         )
     )
@@ -1785,8 +1807,7 @@ def run_forecast_pipeline(
         )
         .rename(
             columns={
-                "value":
-                    "base_rate"
+                "value": "base_rate"
             }
         )
     )
@@ -1805,21 +1826,13 @@ def run_forecast_pipeline(
     )
 
 
-    rates[
-        "quote_rate_decimal"
-    ] = (
-        rates[
-            "quote_rate"
-        ] / 100
+    rates["quote_rate_decimal"] = (
+        rates["quote_rate"] / 100
     )
 
 
-    rates[
-        "base_rate_decimal"
-    ] = (
-        rates[
-            "base_rate"
-        ] / 100
+    rates["base_rate_decimal"] = (
+        rates["base_rate"] / 100
     )
 
 
@@ -1855,18 +1868,14 @@ def run_forecast_pipeline(
         )
 
 
-    X_train = (
-        train_df[
-            FEATURE_COLS
-        ]
-    )
+    X_train = train_df[
+        FEATURE_COLS
+    ]
 
 
-    y_train = (
-        train_df[
-            "target_logret"
-        ]
-    )
+    y_train = train_df[
+        "target_logret"
+    ]
 
 
     # ========================================================
@@ -1903,15 +1912,11 @@ def run_forecast_pipeline(
     # SCALE FEATURES FOR RIDGE AND MLP
     # ========================================================
 
-    scaler = (
-        StandardScaler()
-    )
+    scaler = StandardScaler()
 
 
-    X_train_scaled = (
-        scaler.fit_transform(
-            X_train
-        )
+    X_train_scaled = scaler.fit_transform(
+        X_train
     )
 
 
@@ -1919,17 +1924,11 @@ def run_forecast_pipeline(
     # RIDGE
     # ========================================================
 
-    ridge_model = (
-        create_ridge_model()
-    )
-
+    ridge_model = create_ridge_model()
 
     ridge_model.fit(
-
         X_train_scaled,
-
         y_train
-
     )
 
 
@@ -1937,17 +1936,11 @@ def run_forecast_pipeline(
     # DECISION TREE
     # ========================================================
 
-    tree_model = (
-        create_tree_model()
-    )
-
+    tree_model = create_tree_model()
 
     tree_model.fit(
-
         X_train,
-
         y_train
-
     )
 
 
@@ -1955,28 +1948,16 @@ def run_forecast_pipeline(
     # MLP
     # ========================================================
 
-    mlp_model = (
-        create_mlp_model()
-    )
-
+    mlp_model = create_mlp_model()
 
     mlp_model.fit(
-
         X_train_scaled,
-
         y_train
-
     )
 
 
     # ========================================================
     # LATEST VALID FEATURE ROW
-    #
-    # IMPORTANT:
-    # Do not blindly use df.iloc[-1][FEATURE_COLS].
-    #
-    # Instead, find the latest row where every model feature
-    # is valid.
     # ========================================================
 
     latest_feature_rows = (
@@ -2005,23 +1986,15 @@ def run_forecast_pipeline(
 
 
     latest_feature_row = (
-
         latest_feature_rows
-
         .iloc[[-1]]
-
         .copy()
-
     )
 
 
-    latest_features = (
-
-        latest_feature_row[
-            FEATURE_COLS
-        ]
-
-    )
+    latest_features = latest_feature_row[
+        FEATURE_COLS
+    ]
 
 
     # ========================================================
@@ -2029,20 +2002,16 @@ def run_forecast_pipeline(
     # ========================================================
 
     if not np.isfinite(
-
         latest_features
         .to_numpy(
             dtype=float
         )
-
     ).all():
 
         raise RuntimeError(
-
             f"Invalid model features "
             f"detected for "
             f"{pair_key}."
-
         )
 
 
@@ -2050,14 +2019,8 @@ def run_forecast_pipeline(
     # SCALE LATEST FEATURES
     # ========================================================
 
-    latest_features_scaled = (
-
-        scaler.transform(
-
-            latest_features
-
-        )
-
+    latest_features_scaled = scaler.transform(
+        latest_features
     )
 
 
@@ -2065,21 +2028,15 @@ def run_forecast_pipeline(
     # LATEST DATE AND PRICE
     # ========================================================
 
-    last_known_date = (
-
-        latest_feature_row[
-            "date"
-        ].iloc[0]
-
-    )
+    last_known_date = latest_feature_row[
+        "date"
+    ].iloc[0]
 
 
     last_known_price = float(
-
         latest_feature_row[
             "price"
         ].iloc[0]
-
     )
 
 
@@ -2097,27 +2054,14 @@ def run_forecast_pipeline(
     # RIDGE FORECAST
     # ========================================================
 
-    ridge_prediction = (
-
-        ridge_model
-
-        .predict(
-
-            latest_features_scaled
-
-        )[0]
-
-    )
+    ridge_prediction = ridge_model.predict(
+        latest_features_scaled
+    )[0]
 
 
     forecast_ridge = (
-
         last_known_price *
-
-        np.exp(
-            ridge_prediction
-        )
-
+        np.exp(ridge_prediction)
     )
 
 
@@ -2125,27 +2069,14 @@ def run_forecast_pipeline(
     # DECISION TREE FORECAST
     # ========================================================
 
-    tree_prediction = (
-
-        tree_model
-
-        .predict(
-
-            latest_features
-
-        )[0]
-
-    )
+    tree_prediction = tree_model.predict(
+        latest_features
+    )[0]
 
 
     forecast_tree = (
-
         last_known_price *
-
-        np.exp(
-            tree_prediction
-        )
-
+        np.exp(tree_prediction)
     )
 
 
@@ -2153,34 +2084,19 @@ def run_forecast_pipeline(
     # MLP FORECAST
     # ========================================================
 
-    mlp_prediction = (
-
-        mlp_model
-
-        .predict(
-
-            latest_features_scaled
-
-        )[0]
-
-    )
+    mlp_prediction = mlp_model.predict(
+        latest_features_scaled
+    )[0]
 
 
-    mlp_prediction = (
-        clip_logret(
-            mlp_prediction
-        )
+    mlp_prediction = clip_logret(
+        mlp_prediction
     )
 
 
     forecast_mlp = (
-
         last_known_price *
-
-        np.exp(
-            mlp_prediction
-        )
-
+        np.exp(mlp_prediction)
     )
 
 
@@ -2190,14 +2106,11 @@ def run_forecast_pipeline(
 
     model_forecasts = {
 
-        "ridge":
-            forecast_ridge,
+        "ridge": forecast_ridge,
 
-        "decision_tree":
-            forecast_tree,
+        "decision_tree": forecast_tree,
 
-        "mlp":
-            forecast_mlp
+        "mlp": forecast_mlp
 
     }
 
@@ -2212,11 +2125,9 @@ def run_forecast_pipeline(
         ):
 
             raise RuntimeError(
-
                 f"{model_key} produced "
                 f"an invalid forecast "
                 f"for {pair_key}."
-
             )
 
 
@@ -2225,19 +2136,11 @@ def run_forecast_pipeline(
     # ========================================================
 
     ppp_rows = (
-
         ppp_data
-
         .dropna(
-            subset=[
-                "ppp_rate"
-            ]
+            subset=["ppp_rate"]
         )
-
-        .sort_values(
-            "year"
-        )
-
+        .sort_values("year")
     )
 
 
@@ -2249,22 +2152,16 @@ def run_forecast_pipeline(
         )
 
 
-    latest_ppp_row = (
-        ppp_rows.iloc[-1]
-    )
+    latest_ppp_row = ppp_rows.iloc[-1]
 
 
     forecast_ppp = float(
-        latest_ppp_row[
-            "ppp_rate"
-        ]
+        latest_ppp_row["ppp_rate"]
     )
 
 
     latest_ppp_year = int(
-        latest_ppp_row[
-            "year"
-        ]
+        latest_ppp_row["year"]
     )
 
 
@@ -2283,20 +2180,14 @@ def run_forecast_pipeline(
     # ========================================================
 
     rate_rows = (
-
         rates
-
         .dropna(
             subset=[
                 "quote_rate_decimal",
                 "base_rate_decimal"
             ]
         )
-
-        .sort_values(
-            "year"
-        )
-
+        .sort_values("year")
     )
 
 
@@ -2308,35 +2199,21 @@ def run_forecast_pipeline(
         )
 
 
-    latest_rate_row = (
-        rate_rows.iloc[-1]
-    )
+    latest_rate_row = rate_rows.iloc[-1]
 
 
     quote_rate_value = float(
-
-        latest_rate_row[
-            "quote_rate_decimal"
-        ]
-
+        latest_rate_row["quote_rate_decimal"]
     )
 
 
     base_rate_value = float(
-
-        latest_rate_row[
-            "base_rate_decimal"
-        ]
-
+        latest_rate_row["base_rate_decimal"]
     )
 
 
     latest_rate_year = int(
-
-        latest_rate_row[
-            "year"
-        ]
-
+        latest_rate_row["year"]
     )
 
 
@@ -2345,13 +2222,9 @@ def run_forecast_pipeline(
         last_known_price *
 
         (
-
             (1 + quote_rate_value)
-
             /
-
             (1 + base_rate_value)
-
         )
 
         **
@@ -2375,19 +2248,15 @@ def run_forecast_pipeline(
     # RANDOM WALK BENCHMARK
     # ========================================================
 
-    forecast_rw = (
-        last_known_price
-    )
+    forecast_rw = last_known_price
 
 
     # ========================================================
     # FORECAST DATE
     # ========================================================
 
-    forecast_date = (
-        next_business_day(
-            last_known_date
-        )
+    forecast_date = next_business_day(
+        last_known_date
     )
 
 
@@ -2395,33 +2264,18 @@ def run_forecast_pipeline(
     # MODEL SELECTION
     # ========================================================
 
-    rolling_selection = (
-
-        select_model_rolling_window(
-
-            pair_key,
-
-            df
-
-        )
-
+    rolling_selection = select_model_rolling_window(
+        pair_key,
+        df
     )
 
 
     if rolling_selection is None:
 
-        historical_selection = (
-
-            historical_model_selection(
-
-                df,
-
-                ppp_data,
-
-                rates
-
-            )
-
+        historical_selection = historical_model_selection(
+            df,
+            ppp_data,
+            rates
         )
 
     else:
@@ -2430,16 +2284,9 @@ def run_forecast_pipeline(
 
 
     selection = (
-
         rolling_selection
-
-        if rolling_selection
-        is not None
-
-        else
-
-        historical_selection
-
+        if rolling_selection is not None
+        else historical_selection
     )
 
 
@@ -2449,69 +2296,44 @@ def run_forecast_pipeline(
 
     if selection is not None:
 
-        selected_model_key = (
-
-            selection[
-                "selected_model_key"
-            ]
-
-        )
+        selected_model_key = selection[
+            "selected_model_key"
+        ]
 
 
         forecasts = {
 
-            "ridge":
-                forecast_ridge,
+            "ridge": forecast_ridge,
 
-            "decision_tree":
-                forecast_tree,
+            "decision_tree": forecast_tree,
 
-            "mlp":
-                forecast_mlp,
+            "mlp": forecast_mlp,
 
-            "ppp":
-                forecast_ppp,
+            "ppp": forecast_ppp,
 
-            "irp":
-                forecast_irp
+            "irp": forecast_irp
 
         }
 
 
         selected_model_forecast = float(
-
             forecasts[
                 selected_model_key
             ]
-
         )
 
 
-        if (
-            selected_model_forecast
-            >
-            last_known_price
-        ):
+        if selected_model_forecast > last_known_price:
 
-            selected_model_direction = (
-                "UP"
-            )
+            selected_model_direction = "UP"
 
-        elif (
-            selected_model_forecast
-            <
-            last_known_price
-        ):
+        elif selected_model_forecast < last_known_price:
 
-            selected_model_direction = (
-                "DOWN"
-            )
+            selected_model_direction = "DOWN"
 
         else:
 
-            selected_model_direction = (
-                "FLAT"
-            )
+            selected_model_direction = "FLAT"
 
     else:
 
@@ -2526,19 +2348,11 @@ def run_forecast_pipeline(
     # RIDGE DIRECTION
     # ========================================================
 
-    if (
-        forecast_ridge
-        >
-        last_known_price
-    ):
+    if forecast_ridge > last_known_price:
 
         ridge_direction = "UP"
 
-    elif (
-        forecast_ridge
-        <
-        last_known_price
-    ):
+    elif forecast_ridge < last_known_price:
 
         ridge_direction = "DOWN"
 
@@ -2552,23 +2366,11 @@ def run_forecast_pipeline(
     # ========================================================
 
     ridge_change_percent = (
-
-        (
-
-            forecast_ridge
-            -
-            last_known_price
-
-        )
-
+        (forecast_ridge - last_known_price)
         /
-
         last_known_price
-
         *
-
         100
-
     )
 
 
@@ -2780,7 +2582,7 @@ def run_forecast_pipeline(
 
 
     # ========================================================
-    # SAVE HISTORY
+    # SAVE HISTORY (WITH PAST MODEL PREDICTIONS)
     # ========================================================
 
     recent_history = (
@@ -2799,29 +2601,42 @@ def run_forecast_pipeline(
     )
 
 
-    recent_history[
-        "date"
-    ] = (
-
-        recent_history[
-            "date"
-        ]
-
+    recent_history["date"] = (
+        recent_history["date"]
         .dt
-
-        .strftime(
-            "%Y-%m-%d"
-        )
-
+        .strftime("%Y-%m-%d")
     )
 
 
-    history = (
-        recent_history
-        .to_dict(
-            orient="records"
-        )
+    history = recent_history.to_dict(
+        orient="records"
     )
+
+
+    # Attach past model predictions to each history row
+    try:
+
+        backtest = compute_backtest(
+            df,
+            ppp_data,
+            rates
+        )
+
+        for item in history:
+
+            extra = backtest.get(
+                item["date"]
+            )
+
+            if extra:
+
+                item.update(extra)
+
+    except Exception as e:
+
+        print(
+            f"Backtest failed for {pair_key}: {e}"
+        )
 
 
     with open(
@@ -2851,6 +2666,12 @@ def run_forecast_pipeline(
     # LOG
     # ========================================================
 
+    selected_text = (
+        "pending"
+        if selected_model_forecast is None
+        else selected_model_forecast
+    )
+
     print(
 
         f"[{datetime.now()}] "
@@ -2863,7 +2684,7 @@ def run_forecast_pipeline(
 
         f"Next forecast: "
 
-        f"{"pending" if selected_model_forecast is None else selected_model_forecast} | "
+        f"{selected_text} | "
 
         f"Random Walk: "
 
@@ -3006,9 +2827,7 @@ def resolve_pair():
 @app.route("/api/predict")
 def predict():
 
-    pair_key = (
-        resolve_pair()
-    )
+    pair_key = resolve_pair()
 
     if pair_key is None:
 
@@ -3020,19 +2839,15 @@ def predict():
         }), 400
 
 
-    path = (
-        forecast_file_path(
-            pair_key
-        )
+    path = forecast_file_path(
+        pair_key
     )
 
 
     try:
 
         ensure_fresh_forecast(
-
             pair_key
-
         )
 
     except Exception as e:
@@ -3111,9 +2926,7 @@ def predict():
 @app.route("/api/history")
 def history():
 
-    pair_key = (
-        resolve_pair()
-    )
+    pair_key = resolve_pair()
 
     if pair_key is None:
 
@@ -3125,10 +2938,8 @@ def history():
         }), 400
 
 
-    path = (
-        history_file_path(
-            pair_key
-        )
+    path = history_file_path(
+        pair_key
     )
 
 
@@ -3191,10 +3002,8 @@ def history():
 )
 def refresh():
 
-    requested_pair = (
-        request.args.get(
-            "pair"
-        )
+    requested_pair = request.args.get(
+        "pair"
     )
 
 
@@ -3269,10 +3078,8 @@ def refresh():
 )
 def refresh_cron():
 
-    requested_pair = (
-        request.args.get(
-            "pair"
-        )
+    requested_pair = request.args.get(
+        "pair"
     )
 
 
@@ -3291,9 +3098,7 @@ def refresh_cron():
         }), 400
 
 
-    pair_key = (
-        resolve_pair()
-    )
+    pair_key = resolve_pair()
 
 
     if pair_key is None:
